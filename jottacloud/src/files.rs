@@ -4,7 +4,7 @@ use surf::{Client, http::headers};
 
 use crate::{errors::JottacloudResult, AccessToken};
 
-mod md5_serde {
+mod md5_hex_serde {
     use md5::Digest;
     use serde::{Deserialize, Deserializer, Serializer};
 
@@ -25,7 +25,7 @@ mod md5_serde {
 pub struct AllocReq {
     pub path: String,
     pub bytes: usize,
-    #[serde(with = "md5_serde")]
+    #[serde(with = "md5_hex_serde")]
     pub md5: md5::Digest,
     pub conflict_handler: ConflictHandler,
 }
@@ -84,7 +84,7 @@ pub async fn allocate(
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct UploadRes {
-    #[serde(with = "md5_serde")]
+    #[serde(with = "md5_hex_serde")]
     pub md5: Digest,
     pub bytes: usize,
     pub content_id: String,
