@@ -1,54 +1,36 @@
-use serde::Deserialize;
-use surf::StatusCode;
 use thiserror::Error;
+
+use crate::api::{JsonErrorBody, XmlErrorBody};
 
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("surf error")]
-    HttpError,
+    #[error("{0}")]
+    HttpError(#[from] reqwest::Error),
+
+    #[error("invalid url")]
+    UrlError(#[from] url::ParseError),
 
     #[error("jotta error")]
-    JottaError(ApiErrorRes),
+    JottaError(ApiResError),
 
     #[error("xml error: {0}")]
     XmlError(#[from] serde_xml_rs::Error),
 }
 
-impl From<surf::Error> for Error {
-    fn from(e: surf::Error) -> Self {
-        dbg!(e);
-        Self::HttpError
+#[derive(Debug)]
+pub enum ApiResError {
+    Json(JsonErrorBody),
+    Xml(XmlErrorBody),
+}
+
+impl From<JsonErrorBody> for Error {
+    fn from(e: JsonErrorBody) -> Self {
+        Self::JottaError(ApiResError::Json(e))
     }
 }
 
-impl From<ApiErrorRes> for Error {
-    fn from(e: ApiErrorRes) -> Self {
-        Self::JottaError(e)
+impl From<XmlErrorBody> for Error {
+    fn from(e: XmlErrorBody) -> Self {
+        Self::JottaError(ApiResError::Xml(e))
     }
-}
-
-pub type JottacloudResult<T> = Result<T, Error>;
-
-#[derive(Debug, Deserialize)]
-pub enum ApiException {
-    UniqueFileException,
-    BadCredentialsException,
-    CorruptUploadOpenApiException,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(untagged)]
-pub enum ApiErrorId {
-    Exception(ApiException),
-    Unknown(String),
-}
-
-#[derive(Debug, Deserialize)]
-pub struct ApiErrorRes {
-    pub code: StatusCode,
-    pub message: Option<String>,
-    pub cause: String,
-    pub error_id: ApiErrorId,
-    #[serde(rename = "x-id")]
-    pub x_id: Option<String>,
 }

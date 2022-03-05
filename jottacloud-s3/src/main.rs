@@ -1,7 +1,9 @@
-use std::env;
+use std::{env, str::FromStr};
 
-use jottacloud::{jfs::ls, AccessToken};
-use surf::Client;
+use futures_util::StreamExt;
+// use tokio::io::{AsyncReadExt};
+use jottacloud::{fs::Fs, AccessToken, Path};
+use tokio::{fs::File, io::AsyncWriteExt};
 
 #[tokio::main]
 async fn main() {
@@ -9,37 +11,20 @@ async fn main() {
 
     tracing_subscriber::fmt::init();
 
-    let client = Client::new().with(surf::middleware::Logger::default());
     let token = AccessToken::new(
         env::var("JOTTACLOUD_ACCESS_TOKEN").expect("JOTTACLOUD_ACCESS_TOKEN not set"),
     );
+    let fs = Fs::new(token);
 
-    // let user_info = user_info(&client, &token).await.unwrap();
+    let mut file = File::create("example").await.unwrap();
 
-    // dbg!(user_info);
+    let mut stream = fs
+        .open(&Path::from_str("Jotta/Archive/s3-test/rand").unwrap(), ..)
+        .await
+        .unwrap();
 
-    let items = ls(&client, &token, "Jotta/Archive").await.unwrap();
-
-    dbg!(items);
-
-    // let files = list(&client, &token).await.unwrap();
-
-    // dbg!(files);
-
-    // let req = AllocReq {
-    //     path: FilePath("/archive/s3-test/helloworld4.txt".into()),
-    //     bytes: 4,
-    //     md5: md5::compute(b"bruh"),
-    //     conflict_handler: ConflictHandler::RejectConflicts,
-    //     created: None,
-    //     modified: None,
-    // };
-
-    // let alloc_res = allocate(&client, &token, &req).await.unwrap();
-
-    // dbg!(&alloc_res);
-
-    // let upload_res = upload(&client, &token, alloc_res.upload_url).await.unwrap();
-
-    // dbg!(upload_res);
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.unwrap();
+        file.write_all(&chunk).await.unwrap();
+    }
 }

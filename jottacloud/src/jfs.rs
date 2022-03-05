@@ -1,33 +1,26 @@
+use chrono::{DateTime, Utc};
 use md5::Digest;
+use reqwest::{header, Client};
 use serde::Deserialize;
-use surf::{http::headers, Client};
+
+use serde_with::serde_as;
 use uuid::Uuid;
 
-use crate::files::md5_hex_serde;
-use crate::{errors::JottacloudResult, AccessToken};
+use crate::api::read_xml;
+use crate::serde::OptTypoDateTime;
+use crate::{AccessToken, Path};
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum DeviceType {
-    Laptop,
-    Jotta,
-}
-
+#[serde_as]
 #[derive(Debug, Deserialize)]
 pub struct Device {
     pub name: String,
     pub display_name: String,
     #[serde(rename = "type")]
-    pub typ: DeviceType,
-    pub sid: String,
+    pub typ: String,
+    pub sid: Uuid,
     pub size: usize,
-    pub modified: String,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all(deserialize = "kebab-case"))]
-pub enum AccountType {
-    Unlimited,
+    #[serde_as(as = "OptTypoDateTime")]
+    pub modified: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -40,7 +33,7 @@ pub struct Devices {
 #[serde(rename_all(deserialize = "kebab-case"))]
 pub struct UserInfo {
     pub username: String,
-    pub account_type: AccountType,
+    pub account_type: String,
     pub locked: bool,
     pub capacity: isize,
     pub max_devices: isize,
@@ -54,27 +47,30 @@ pub struct UserInfo {
     pub devices: Devices,
 }
 
-pub async fn get_user(client: &Client, token: &AccessToken) -> JottacloudResult<UserInfo> {
-    let mut res = client
+pub async fn get_user(client: &Client, token: &AccessToken) -> crate::Result<UserInfo> {
+    let res = client
         .get(format!(
             "https://jfs.jottacloud.com/jfs/{}",
             token.username()
         ))
-        .header(headers::AUTHORIZATION, format!("Bearer {}", token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", token))
+        .send()
         .await?;
 
-    let xml = res.body_string().await?;
+    let xml = res.text().await?;
 
     let info = serde_xml_rs::from_str(&xml)?;
 
     Ok(info)
 }
 
+#[serde_as]
 #[derive(Debug, Deserialize)]
 pub struct MountPoint {
     pub name: String,
     pub size: usize,
-    pub modified: String,
+    #[serde_as(as = "OptTypoDateTime")]
+    pub modified: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -88,8 +84,8 @@ pub struct DeviceInfo {
     pub name: String,
     pub display_name: String,
     #[serde(rename = "type")]
-    pub typ: DeviceType,
-    pub sid: String,
+    pub typ: String,
+    pub sid: Uuid,
     pub size: usize,
     pub modified: String,
     pub user: String,
@@ -101,38 +97,41 @@ pub async fn get_device(
     client: &Client,
     token: &AccessToken,
     device_name: &str,
-) -> JottacloudResult<DeviceInfo> {
-    let mut res = client
+) -> crate::Result<DeviceInfo> {
+    let res = client
         .get(format!(
             "https://jfs.jottacloud.com/jfs/{}/{}",
             token.username(),
             device_name,
         ))
-        .header(headers::AUTHORIZATION, format!("Bearer {}", token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", token))
+        .send()
         .await?;
 
-    let xml = res.body_string().await?;
-
-    let info = serde_xml_rs::from_str(&xml)?;
-
-    Ok(info)
+    read_xml(res).await
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum RevisionState {
     Completed,
+    Incomplete,
+    Corrupt,
 }
 
 #[derive(Debug, Deserialize)]
-pub struct CurrentRevision {
+pub struct Revision {
     pub number: usize,
     pub state: RevisionState,
     pub created: String,
     pub modified: String,
     pub mime: String,
-    pub size: usize,
-    #[serde(with = "md5_hex_serde")]
+    /// `size` can be `None` if the revision is corrupted.
+    ///
+    /// Incomplete revisions grow as more data is uploaded,
+    /// i.e. they do not have their allocated sizes from the start.
+    pub size: Option<usize>,
+    #[serde(with = "crate::serde::md5_hex")]
     pub md5: Digest,
     pub updated: String,
 }
@@ -142,10 +141,10 @@ pub struct File {
     pub name: String,
     pub uuid: Uuid,
     #[serde(rename(deserialize = "currentRevision"))]
-    pub current_revision: CurrentRevision,
+    pub current_revision: Revision,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Default)]
 pub struct Files {
     #[serde(rename = "$value")]
     pub files: Vec<File>,
@@ -156,37 +155,94 @@ pub struct Folder {
     pub name: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Default)]
 pub struct Folders {
     #[serde(rename = "$value")]
-    pub files: Vec<Folder>,
+    pub folders: Vec<Folder>,
 }
 
 #[derive(Debug, Deserialize)]
-pub struct DirectoryInfo {
+pub struct IndexMeta {
+    // pub first: Option<usize>,
+    // pub max: Option<usize>,
+    pub total: usize,
+    pub num_folders: usize,
+    pub num_files: usize,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct Index {
+    pub name: String,
+    // pub time: DateTime<Utc>, // format is YYYY-MM-DD-THH:mm:ssZ for some reason (note the "-" before T)
+    pub path: Path,
+    pub host: String,
+    #[serde(default)]
     pub folders: Folders,
+    #[serde(default)]
     pub files: Files,
+    pub metadata: IndexMeta,
 }
 
-pub async fn ls(
-    client: &Client,
-    token: &AccessToken,
-    path: &str,
-) -> JottacloudResult<DirectoryInfo> {
-    let mut res = client
-        .get(format!(
-            "https://jfs.jottacloud.com/jfs/{}/{}",
-            token.username(),
-            path
-        ))
-        .header(headers::AUTHORIZATION, format!("Bearer {}", token))
-        .await?;
-
-    let xml = res.body_string().await?;
-
-    let info = serde_xml_rs::from_str(&xml)?;
-
-    println!("{:?}", info);
-
-    Ok(info)
+#[derive(Debug, Deserialize, Default)]
+pub struct Revisions {
+    #[serde(rename = "$value")]
+    pub revisions: Vec<Revision>,
 }
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all(deserialize = "camelCase"))]
+pub struct FileMeta {
+    pub name: String,
+    pub uuid: Uuid,
+    pub path: Path,
+    pub abspath: Path,
+
+    /// The upcoming revision.
+    ///
+    /// Probably never has a [`state`] of [`Completed`](RevisionState::Completed).
+    pub latest_revision: Option<Revision>,
+    pub current_revision: Option<Revision>,
+    #[serde(default)]
+    /// **Earlier** revisions.
+    pub revisions: Revisions,
+}
+
+impl FileMeta {
+    /// Check if `latest_revision` is `None` (otherwise it probably is `Incomplete` or
+    /// `Corrupted`) and if `current_revision` has a state of `Completed`.
+    pub fn last_upload_complete(&self) -> bool {
+        self.latest_revision.is_none()
+            && matches!(
+                &self.current_revision,
+                Some(Revision {
+                    state: RevisionState::Completed,
+                    ..
+                })
+            )
+    }
+}
+
+// pub async fn open(client: &Client, token: &AccessToken, path: &Path) -> crate::Result<Stream<Item = reqwest::Result<Bytes>>> {
+//     let mut res = client
+//         .get(format!(
+//             "https://jfs.jottacloud.com/jfs/{}/{}?mode=bin",
+//             token.username(),
+//             path
+//         ))
+//         .header(header::AUTHORIZATION, format!("Bearer {}", token))
+//         // .header("range", "bytes=0-3")
+//         .send()
+//         .await?;
+
+//     if !res.status().is_success() {
+//         let err_xml = res.text().await?;
+//         let err: XmlErrorBody = serde_xml_rs::from_str(&err_xml)?;
+//         return Err(err.into());
+//     }
+
+//     // let md5 = res.header(headers::ETAG).and_then(|etag| hex_to_digest(etag.as_str()).ok());
+
+//     // println!("md5 digest: {:x?}", md5);
+
+//     Ok(res.bytes_stream())
+// }
