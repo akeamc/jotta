@@ -22,7 +22,7 @@ fn parse_typo_datetime(s: &str) -> Result<DateTime<Utc>, chrono::ParseError> {
     Ok(dt)
 }
 
-pub struct OptTypoDateTime;
+pub(crate) struct OptTypoDateTime;
 
 impl<'de> DeserializeAs<'de, Option<DateTime<Utc>>> for OptTypoDateTime {
     fn deserialize_as<D>(deserializer: D) -> Result<Option<DateTime<Utc>>, D::Error>
@@ -40,22 +40,27 @@ impl<'de> DeserializeAs<'de, Option<DateTime<Utc>>> for OptTypoDateTime {
     }
 }
 
-pub mod md5_hex {
+pub(crate) mod md5_hex {
     use hex::FromHexError;
     use md5::Digest;
     use serde::{Deserialize, Deserializer, Serializer};
 
-    pub fn serialize<S: Serializer>(digest: &Digest, serializer: S) -> Result<S::Ok, S::Error> {
+    pub(crate) fn serialize<S: Serializer>(
+        digest: &Digest,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
         serializer.serialize_str(&format!("{:x}", digest))
     }
 
-    pub fn hex_to_digest(str: &str) -> Result<Digest, FromHexError> {
+    pub(crate) fn hex_to_digest(str: &str) -> Result<Digest, FromHexError> {
         let mut bytes = [0; 16];
         hex::decode_to_slice(str, &mut bytes)?;
         Ok(Digest(bytes))
     }
 
-    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Digest, D::Error> {
+    pub(crate) fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Digest, D::Error> {
         let str = String::deserialize(deserializer)?;
         hex_to_digest(&str).map_err(serde::de::Error::custom)
     }

@@ -1,3 +1,9 @@
+#![warn(
+    unreachable_pub,
+    missing_debug_implementations,
+    // missing_docs,
+    // clippy::pedantic
+)]
 use std::{fmt::Display, ops::Deref, str::FromStr};
 
 use ::serde::{Deserialize, Serialize};

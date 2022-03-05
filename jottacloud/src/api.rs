@@ -1,8 +1,9 @@
 use reqwest::Response;
 use serde::{de::DeserializeOwned, Deserialize};
 
+/// An exception thrown by the upstream API.
 #[derive(Debug, Deserialize)]
-pub enum ApiException {
+pub enum Exception {
     UniqueFileException,
     BadCredentialsException,
     CorruptUploadOpenApiException,
@@ -18,7 +19,7 @@ pub struct JsonErrorBody {
     pub code: Option<u16>,
     pub message: Option<String>,
     pub cause: Option<String>,
-    pub error_id: Option<MaybeUnknown<ApiException>>,
+    pub error_id: Option<MaybeUnknown<Exception>>,
     #[serde(rename(deserialize = "x-id"))]
     pub x_id: Option<String>,
 }

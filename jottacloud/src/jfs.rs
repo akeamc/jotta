@@ -211,6 +211,7 @@ pub struct FileMeta {
 impl FileMeta {
     /// Check if `latest_revision` is `None` (otherwise it probably is `Incomplete` or
     /// `Corrupted`) and if `current_revision` has a state of `Completed`.
+    #[must_use]
     pub fn last_upload_complete(&self) -> bool {
         self.latest_revision.is_none()
             && matches!(

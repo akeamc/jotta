@@ -44,10 +44,12 @@ pub struct AccessTokenClaims {
 pub struct AccessToken(String);
 
 impl AccessToken {
+    #[must_use]
     pub fn new(value: String) -> Self {
         Self(value)
     }
 
+    #[must_use]
     pub fn claims(&self) -> AccessTokenClaims {
         let mut segments = self.0.split('.');
         let _header = segments.next();
@@ -59,6 +61,7 @@ impl AccessToken {
         claims
     }
 
+    #[must_use]
     pub fn username(&self) -> String {
         self.claims().username
     }

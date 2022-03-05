@@ -14,19 +14,21 @@ use reqwest::{
 };
 
 use crate::{
-    api::{read_json, read_xml, ApiException, MaybeUnknown, XmlErrorBody},
+    api::{read_json, read_xml, Exception, MaybeUnknown, XmlErrorBody},
     auth::AccessToken,
     files::{AllocReq, AllocRes, CompleteUploadRes, IncompleteUploadRes, UploadRes},
     jfs::{FileMeta, Index},
     Path,
 };
 
+#[derive(Debug)]
 pub struct Fs {
     client: Client,
     access_token: AccessToken,
 }
 
 impl Fs {
+    #[must_use]
     pub fn new(access_token: AccessToken) -> Self {
         Self {
             client: Client::new(),
@@ -66,11 +68,7 @@ impl Fs {
             .send()
             .await?;
 
-        dbg!(res.status());
-
-        let res = read_json(res).await??;
-
-        Ok(res)
+        Ok(read_json(res).await??)
     }
 
     pub async fn put_data(
@@ -97,7 +95,7 @@ impl Fs {
         let res = match read_json::<CompleteUploadRes>(res).await? {
             Ok(complete) => UploadRes::Complete(complete),
             Err(err) => match err.error_id {
-                Some(MaybeUnknown::Known(ApiException::IncompleteUploadOpenApiException)) => {
+                Some(MaybeUnknown::Known(Exception::IncompleteUploadOpenApiException)) => {
                     UploadRes::Incomplete(IncompleteUploadRes { range })
                 }
                 _ => return Err(err.into()),
@@ -171,6 +169,7 @@ pub enum OptionalByteRange {
 }
 
 impl OptionalByteRange {
+    #[must_use]
     fn len(&self) -> Option<usize> {
         match self {
             Self::Full | Self::From { .. } => None,
@@ -179,21 +178,19 @@ impl OptionalByteRange {
         }
     }
 
+    #[must_use]
     fn start(&self) -> usize {
         match self {
-            Self::Full => 0,
-            Self::From { start } => *start,
-            Self::To { .. } => 0,
-            Self::Inclusive { start, .. } => *start,
+            Self::Full | Self::To { .. } => 0,
+            Self::Inclusive { start, .. } | Self::From { start } => *start,
         }
     }
 
+    #[must_use]
     fn end(&self) -> Option<usize> {
         match self {
-            Self::Full => None,
-            Self::From { .. } => None,
-            Self::To { end } => Some(*end),
-            Self::Inclusive { end, .. } => Some(*end),
+            Self::Full | Self::From { .. } => None,
+            Self::Inclusive { end, .. } | Self::To { end } => Some(*end),
         }
     }
 }
@@ -221,7 +218,7 @@ where
     R: RangeBounds<usize>,
 {
     fn from(bounds: R) -> Self {
-        use std::ops::Bound::*;
+        use std::ops::Bound::{Excluded, Included, Unbounded};
 
         let start = match bounds.start_bound() {
             Included(i) => Some(*i),
