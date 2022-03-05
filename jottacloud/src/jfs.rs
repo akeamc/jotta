@@ -7,8 +7,9 @@ use serde_with::serde_as;
 use uuid::Uuid;
 
 use crate::api::read_xml;
+use crate::auth::AccessToken;
 use crate::serde::OptTypoDateTime;
-use crate::{AccessToken, Path};
+use crate::Path;
 
 #[serde_as]
 #[derive(Debug, Deserialize)]

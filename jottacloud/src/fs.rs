@@ -15,9 +15,10 @@ use reqwest::{
 
 use crate::{
     api::{read_json, read_xml, ApiException, MaybeUnknown, XmlErrorBody},
+    auth::AccessToken,
     files::{AllocReq, AllocRes, CompleteUploadRes, IncompleteUploadRes, UploadRes},
     jfs::{FileMeta, Index},
-    AccessToken, Path,
+    Path,
 };
 
 pub struct Fs {
@@ -141,13 +142,12 @@ impl Fs {
     ) -> crate::Result<impl Stream<Item = reqwest::Result<Bytes>>> {
         let range: OptionalByteRange = range.into();
 
-        println!("{:?}", range.to_string());
-
         let res = self
             .jfs_req(
                 Method::GET,
                 &format!("{}/{}?mode=bin", self.access_token.username(), path),
             )?
+            // status will be `206 Partial Content` even if the whole body is returned
             .header(header::RANGE, range)
             .send()
             .await?;

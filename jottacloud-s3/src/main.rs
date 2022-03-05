@@ -2,7 +2,8 @@ use std::{env, str::FromStr};
 
 use futures_util::StreamExt;
 // use tokio::io::{AsyncReadExt};
-use jottacloud::{fs::Fs, AccessToken, Path};
+use jottacloud::{auth::get_access_token, fs::Fs, Path};
+use reqwest::Client;
 use tokio::{fs::File, io::AsyncWriteExt};
 
 #[tokio::main]
@@ -11,10 +12,19 @@ async fn main() {
 
     tracing_subscriber::fmt::init();
 
-    let token = AccessToken::new(
-        env::var("JOTTACLOUD_ACCESS_TOKEN").expect("JOTTACLOUD_ACCESS_TOKEN not set"),
-    );
-    let fs = Fs::new(token);
+    let refresh_token = env::var("REFRESH_TOKEN").expect("REFRESH_TOKEN not set");
+    let session_id = env::var("SESSION_ID").expect("SESSION_ID not set");
+
+    let access_token = get_access_token(
+        &Client::new(),
+        &refresh_token,
+        "jottacloud", // other sites: "tele2.se"
+        &session_id,
+    )
+    .await
+    .unwrap();
+
+    let fs = Fs::new(access_token);
 
     let mut file = File::create("example").await.unwrap();
 
