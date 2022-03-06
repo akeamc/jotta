@@ -40,7 +40,9 @@ pub struct JsonErrorBody {
 pub struct XmlErrorBody {
     /// Error code.
     pub code: u16,
-    /// Error message.
+    /// Error message, often starting with `no.jotta.backup.errors.<exception>`.
+    ///
+    /// TODO: Implement parser for exceptions specified here.
     pub message: Option<String>,
     /// Error reason.
     pub reason: String,

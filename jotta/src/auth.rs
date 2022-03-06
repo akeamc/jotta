@@ -1,35 +1,104 @@
-use chrono::{DateTime, Utc};
+use std::marker::PhantomData;
+
+use chrono::{DateTime, Duration, Utc};
+
 use reqwest::{header, Client};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use tracing::instrument;
 
-/// Get a new access token.
-#[instrument(skip_all)]
-pub async fn get_access_token(
-    client: &Client,
-    refresh_token: &str,
-    site: &str,
-    session_id: &str,
-) -> crate::Result<AccessToken> {
-    let res = client
-        .get("https://jottacloud.com/web/token")
-        .header(
-            header::COOKIE,
-            format!(
-                "refresh_token={}; {}.session={}",
-                refresh_token, site, session_id
-            ),
-        )
-        .send()
-        .await?;
+/// Generic auth provider.
+pub trait AuthProvider {
+    /// Name of the session cookie, e.g. `jottacloud.session`.
+    const SESSION_COOKIE_NAME: &'static str;
 
-    let cookie = res
-        .cookies()
-        .find(|c| c.name() == "access_token")
-        .expect("no cookie :(");
+    /// Domain, e.g. `jottacloud.com`.
+    const DOMAIN: &'static str;
+}
 
-    Ok(AccessToken::new(cookie.value().into()))
+/// A caching token store.
+#[derive(Debug)]
+pub struct TokenStore<P: AuthProvider> {
+    refresh_token: String,
+    session_id: String,
+    access_token: Option<AccessToken>,
+    provider: PhantomData<P>,
+}
+
+impl<P: AuthProvider> TokenStore<P> {
+    /// Construct a new [`TokenStore`].
+    #[must_use]
+    pub fn new(refresh_token: String, session_id: String) -> Self {
+        Self {
+            refresh_token,
+            session_id,
+            access_token: None,
+            provider: Default::default(),
+        }
+    }
+
+    /// Get the cached refresh token or renew it.
+    pub async fn get_refresh_token(&mut self, _client: &Client) -> crate::Result<String> {
+        Ok(self.refresh_token.clone())
+    }
+
+    /// Get the cached access token or renew it if it needs to be renewed.
+    #[instrument(skip_all)]
+    pub async fn get_access_token(&mut self, client: &Client) -> crate::Result<AccessToken> {
+        if let Some(access_token) = &self.access_token {
+            if access_token.exp() - Duration::minutes(5) < Utc::now() {
+                return Ok(access_token.clone());
+            }
+        }
+
+        let res = client
+            .get(format!("https://{}/web/token", P::DOMAIN))
+            .header(
+                header::COOKIE,
+                format!(
+                    "refresh_token={}; {}={}",
+                    self.get_refresh_token(client).await?,
+                    P::SESSION_COOKIE_NAME,
+                    self.session_id,
+                ),
+            )
+            .send()
+            .await?;
+
+        let cookie = res
+            .cookies()
+            .find(|c| c.name() == "access_token")
+            .expect("no cookie :(");
+
+        let access_token = AccessToken::new(cookie.value().into());
+
+        self.access_token = Some(access_token.clone());
+
+        Ok(access_token)
+    }
+}
+
+/// Auth providers.
+pub mod provider {
+    use super::AuthProvider;
+
+    macro_rules! provider {
+        ($name:ident, $domain:literal, $cookie_name:literal) => {
+            /// Authentication provider with domain
+            #[doc=$domain]
+            #[derive(Debug)]
+            pub struct $name;
+
+            impl AuthProvider for $name {
+                const DOMAIN: &'static str = $domain;
+
+                const SESSION_COOKIE_NAME: &'static str = $cookie_name;
+            }
+        };
+    }
+
+    provider!(Jottacloud, "jottacloud.com", "jottacloud.session");
+    provider!(Tele2, "mittcloud.tele2.se", "tele2.se.session");
 }
 
 /// JWT claims for the [`AccessToken`].
@@ -44,7 +113,7 @@ pub struct AccessTokenClaims {
 }
 
 /// An access token used to authenticate with all Jottacloud services.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct AccessToken(String);
 
 impl AccessToken {
@@ -75,6 +144,12 @@ impl AccessToken {
     #[must_use]
     pub fn username(&self) -> String {
         self.claims().username
+    }
+
+    /// Expiration time.
+    #[must_use]
+    pub fn exp(&self) -> DateTime<Utc> {
+        self.claims().exp
     }
 }
 
