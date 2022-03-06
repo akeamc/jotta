@@ -21,6 +21,7 @@ use crate::{
     Path,
 };
 
+/// A Jottacloud "filesystem".
 #[derive(Debug)]
 pub struct Fs {
     client: Client,
@@ -28,6 +29,7 @@ pub struct Fs {
 }
 
 impl Fs {
+    /// Create a new filesystem.
     #[must_use]
     pub fn new(access_token: AccessToken) -> Self {
         Self {
@@ -61,6 +63,14 @@ impl Fs {
         Ok(self.req_with_token(method, url))
     }
 
+    /// Allocate for uploading a new file or a new file revision.
+    ///
+    /// # Errors
+    ///
+    /// - network errors
+    /// - authentication errors (invalid token)
+    /// - jottacloud errors
+    /// - too little space left? (not verified)
     pub async fn allocate(&self, req: &AllocReq<'_>) -> crate::Result<AllocRes> {
         let res = self
             .files_v1_req_builder(Method::POST, "allocate")?
@@ -71,6 +81,14 @@ impl Fs {
         Ok(read_json(res).await??)
     }
 
+    /// Upload some or all data. `upload_url` is acquired from [`Fs::allocate`].
+    ///
+    /// # Errors
+    ///
+    /// - invalid upload url
+    /// - premature end of body (smaller `body` than `range`)
+    /// - jottacloud erorr
+    /// - network error
     pub async fn put_data(
         &self,
         upload_url: &str,
@@ -105,6 +123,13 @@ impl Fs {
         Ok(res)
     }
 
+    /// List all files and folders at a path. Similar to the UNIX `fs` command.
+    ///
+    /// # Errors
+    ///
+    /// - network errors
+    /// - jottacloud errors (including auth)
+    /// - path doesn't exist
     pub async fn index(&self, path: &Path) -> crate::Result<Index> {
         let res = self
             .jfs_req(
@@ -121,6 +146,13 @@ impl Fs {
 
     // }
 
+    /// Get metadata associated with a file.
+    ///
+    /// # Errors
+    ///
+    /// - network errors
+    /// - jottacloud errors
+    /// - no such file
     pub async fn file_meta(&self, path: &Path) -> crate::Result<FileMeta> {
         let res = self
             .jfs_req(
@@ -133,6 +165,14 @@ impl Fs {
         read_xml(res).await
     }
 
+    /// Open a stream to a file.
+    ///
+    /// # Errors
+    ///
+    /// - file doesn't exist
+    /// - range is larger than the file itself
+    /// - network errors
+    /// - jottacloud errors
     pub async fn open(
         &self,
         path: &Path,
@@ -160,38 +200,28 @@ impl Fs {
     }
 }
 
+/// Simplified abstraction of the `Range` header value in the sense that
+/// only one range is allowed.
 #[derive(Debug)]
-pub enum OptionalByteRange {
-    Full,
-    From { start: usize },
-    To { end: usize },
-    Inclusive { start: usize, end: usize },
+pub struct OptionalByteRange {
+    start: Option<usize>,
+    end: Option<usize>,
 }
 
 impl OptionalByteRange {
     #[must_use]
     fn len(&self) -> Option<usize> {
-        match self {
-            Self::Full | Self::From { .. } => None,
-            Self::To { end } => Some(end + 1),
-            Self::Inclusive { start, end } => Some(end - start + 1),
-        }
+        self.end.map(|end| end + 1 - self.start.unwrap_or(0))
     }
 
     #[must_use]
     fn start(&self) -> usize {
-        match self {
-            Self::Full | Self::To { .. } => 0,
-            Self::Inclusive { start, .. } | Self::From { start } => *start,
-        }
+        self.start.unwrap_or(0)
     }
 
     #[must_use]
     fn end(&self) -> Option<usize> {
-        match self {
-            Self::Full | Self::From { .. } => None,
-            Self::Inclusive { end, .. } | Self::To { end } => Some(*end),
-        }
+        self.end
     }
 }
 
@@ -238,11 +268,6 @@ where
         );
         assert_ne!(end, Some(0), "range must not end at 0");
 
-        match (start, end) {
-            (None, None) => Self::Full,
-            (Some(start), None) => Self::From { start },
-            (None, Some(end)) => Self::To { end },
-            (Some(start), Some(end)) => Self::Inclusive { start, end },
-        }
+        Self { start, end }
     }
 }

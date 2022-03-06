@@ -32,6 +32,7 @@ pub struct Devices {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all(deserialize = "kebab-case"))]
+#[allow(clippy::struct_excessive_bools)]
 pub struct UserInfo {
     pub username: String,
     pub account_type: String,

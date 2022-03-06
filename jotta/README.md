@@ -1,6 +1,8 @@
-# Jottacloud API Discoveries
+# `jotta`
 
-## Uploading
+## Jottacloud API Discoveries
+
+### Uploading
 
 You need to allocate before uploading:
 
@@ -10,7 +12,7 @@ The **JSON body** must contain a `md5` field, which makes streaming complicated.
 
 A successful allocation will return an `upload_url` that you can `POST` the data to.
 
-### Chunked uploads
+#### Chunked uploads
 
 Uploads can be easily chunked by `POST`ing to the previously obtained `upload_url` with the desired chunk
 and a `Range` header specifying where in the complete file this chunk is located.

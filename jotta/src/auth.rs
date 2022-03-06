@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use tracing::instrument;
 
+/// Get a new access token.
 #[instrument(skip_all)]
 pub async fn get_access_token(
     client: &Client,
@@ -31,24 +32,33 @@ pub async fn get_access_token(
     Ok(AccessToken::new(cookie.value().into()))
 }
 
+/// JWT claims for the [`AccessToken`].
 #[serde_as]
 #[derive(Debug, Deserialize)]
 pub struct AccessTokenClaims {
+    /// Username associated with this access token.
     pub username: String,
     #[serde_as(as = "serde_with::TimestampSeconds<i64>")]
     /// Expiration date of the token.
     pub exp: DateTime<Utc>,
 }
 
+/// An access token used to authenticate with all Jottacloud services.
 #[derive(Debug, Serialize)]
 pub struct AccessToken(String);
 
 impl AccessToken {
+    /// Construct a new access token.
     #[must_use]
     pub fn new(value: String) -> Self {
         Self(value)
     }
 
+    /// Parse claims.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the access token isn't a JWT or is missing some or all [`AccessTokenClaims`].
     #[must_use]
     pub fn claims(&self) -> AccessTokenClaims {
         let mut segments = self.0.split('.');
@@ -61,6 +71,7 @@ impl AccessToken {
         claims
     }
 
+    /// Get the associated username.
     #[must_use]
     pub fn username(&self) -> String {
         self.claims().username
