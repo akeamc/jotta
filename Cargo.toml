@@ -1,2 +1,2 @@
 [workspace]
-members = ["jottacloud", "jottacloud-s3"]
+members = ["jotta", "jotta-s3"]

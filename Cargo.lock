@@ -473,7 +473,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1aab8fc367588b89dcee83ab0fd66b72b50b72fa1904d7095045ace2b0c81c35"
 
 [[package]]
-name = "jottacloud"
+name = "jotta"
 version = "0.1.0"
 dependencies = [
  "base64",
@@ -495,12 +495,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "jottacloud-s3"
+name = "jotta-s3"
 version = "0.1.0"
 dependencies = [
  "dotenv",
  "futures-util",
- "jottacloud",
+ "jotta",
  "reqwest",
  "tokio",
  "tracing-subscriber",

@@ -1,8 +1,7 @@
 use std::{env, str::FromStr};
 
 use futures_util::StreamExt;
-// use tokio::io::{AsyncReadExt};
-use jottacloud::{auth::get_access_token, fs::Fs, Path};
+use jotta::{auth::get_access_token, fs::Fs, Path};
 use reqwest::Client;
 use tokio::{fs::File, io::AsyncWriteExt};
 
