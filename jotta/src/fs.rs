@@ -99,7 +99,7 @@ impl Fs {
             .req_with_token(Method::POST, upload_url)
             .body(body)
             .header(header::CONTENT_TYPE, "application/octet-stream")
-            .header(header::CONTENT_LENGTH, range.end() + 1 - range.start())
+            .header(header::CONTENT_LENGTH, range.end() - range.start())
             .header(
                 header::RANGE,
                 format!("bytes={}-{}", range.start(), range.end()),

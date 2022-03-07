@@ -1,6 +1,5 @@
 use std::{env, io::SeekFrom, str::FromStr};
 
-// use futures_util::{StreamExt};
 use hex_literal::hex;
 use jotta::{
     auth::{provider, TokenStore},
@@ -9,7 +8,10 @@ use jotta::{
     Path,
 };
 use reqwest::{Body, Client};
-use tokio::{fs::File, io::AsyncSeekExt};
+use tokio::{
+    fs::File,
+    io::{AsyncSeekExt, BufReader},
+};
 use tokio_util::io::ReaderStream;
 
 #[tokio::main]
@@ -21,15 +23,18 @@ async fn main() {
     let refresh_token = env::var("REFRESH_TOKEN").expect("REFRESH_TOKEN not set");
     let session_id = env::var("SESSION_ID").expect("SESSION_ID not set");
 
-    let mut store = TokenStore::<provider::Tele2>::new(refresh_token, session_id);
+    let mut store = TokenStore::<provider::Jottacloud>::new(refresh_token, session_id);
+    let client = Client::new();
 
-    let access_token = store.get_access_token(&Client::new()).await.unwrap();
+    let access_token = store.get_access_token(&client).await.unwrap();
+
+    dbg!(store.get_access_token(&client).await.unwrap());
 
     let fs = Fs::new(access_token);
 
     let mut file = File::open("rand").await.unwrap();
     let total = file.metadata().await.unwrap().len() as usize;
-    let digest = md5::Digest(hex!("1a84e5236fff4791ed1b2bd76327cd15"));
+    let digest = md5::Digest(hex!("73ab596dcf78ed27be5dc7e25c2b623f"));
 
     let res = fs
         .allocate(&AllocReq {
@@ -49,6 +54,7 @@ async fn main() {
         .await
         .unwrap();
 
+    let file = BufReader::new(file);
     let stream = ReaderStream::new(file);
 
     let res = fs

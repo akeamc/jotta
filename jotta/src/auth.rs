@@ -1,4 +1,7 @@
-use std::marker::PhantomData;
+use std::{
+    marker::PhantomData,
+    sync::{Arc, RwLock},
+};
 
 use chrono::{DateTime, Duration, Utc};
 
@@ -16,12 +19,12 @@ pub trait AuthProvider {
     const DOMAIN: &'static str;
 }
 
-/// A caching token store.
-#[derive(Debug)]
+/// A thread-safe caching token store.
+#[derive(Debug, Clone)]
 pub struct TokenStore<P: AuthProvider> {
     refresh_token: String,
     session_id: String,
-    access_token: Option<AccessToken>,
+    access_token: Arc<RwLock<Option<AccessToken>>>,
     provider: PhantomData<P>,
 }
 
@@ -32,7 +35,7 @@ impl<P: AuthProvider> TokenStore<P> {
         Self {
             refresh_token,
             session_id,
-            access_token: None,
+            access_token: Default::default(),
             provider: Default::default(),
         }
     }
@@ -45,9 +48,11 @@ impl<P: AuthProvider> TokenStore<P> {
     /// Get the cached access token or renew it if it needs to be renewed.
     #[instrument(skip_all)]
     pub async fn get_access_token(&mut self, client: &Client) -> crate::Result<AccessToken> {
-        if let Some(access_token) = &self.access_token {
-            if access_token.exp() - Duration::minutes(5) < Utc::now() {
-                return Ok(access_token.clone());
+        {
+            let lock = self.access_token.read().unwrap();
+
+            if let Some(ref access_token) = *lock {
+                return Ok(access_token.to_owned());
             }
         }
 
@@ -72,7 +77,7 @@ impl<P: AuthProvider> TokenStore<P> {
 
         let access_token = AccessToken::new(cookie.value().into());
 
-        self.access_token = Some(access_token.clone());
+        *self.access_token.write().unwrap() = Some(access_token.clone());
 
         Ok(access_token)
     }
