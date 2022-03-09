@@ -93,7 +93,7 @@ impl Fs {
         &self,
         upload_url: &str,
         body: impl Into<Body>,
-        range: RangeInclusive<usize>,
+        range: RangeInclusive<u64>,
     ) -> crate::Result<UploadRes> {
         let res = self
             .req_with_token(Method::POST, upload_url)
@@ -204,23 +204,23 @@ impl Fs {
 /// only one range is allowed.
 #[derive(Debug)]
 pub struct OptionalByteRange {
-    start: Option<usize>,
-    end: Option<usize>,
+    start: Option<u64>,
+    end: Option<u64>,
 }
 
 impl OptionalByteRange {
     #[must_use]
-    fn len(&self) -> Option<usize> {
+    fn len(&self) -> Option<u64> {
         self.end.map(|end| end + 1 - self.start.unwrap_or(0))
     }
 
     #[must_use]
-    fn start(&self) -> usize {
+    fn start(&self) -> u64 {
         self.start.unwrap_or(0)
     }
 
     #[must_use]
-    fn end(&self) -> Option<usize> {
+    fn end(&self) -> Option<u64> {
         self.end
     }
 }
@@ -245,7 +245,7 @@ impl From<OptionalByteRange> for HeaderValue {
 
 impl<R> From<R> for OptionalByteRange
 where
-    R: RangeBounds<usize>,
+    R: RangeBounds<u64>,
 {
     fn from(bounds: R) -> Self {
         use std::ops::Bound::{Excluded, Included, Unbounded};
@@ -263,7 +263,7 @@ where
         };
 
         assert!(
-            start.unwrap_or(0) <= end.unwrap_or(usize::MAX),
+            start.unwrap_or(0) <= end.unwrap_or(u64::MAX),
             "range end must not be lower than start"
         );
         assert_ne!(end, Some(0), "range must not end at 0");

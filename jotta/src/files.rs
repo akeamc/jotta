@@ -13,7 +13,7 @@ use crate::{jfs::RevisionState, Path};
 pub struct AllocReq<'a> {
     pub path: &'a Path,
     /// How many *more* bytes to allocate.
-    pub bytes: usize,
+    pub bytes: u64,
     #[serde(with = "crate::serde::md5_hex")]
     pub md5: md5::Digest,
     pub conflict_handler: ConflictHandler,
@@ -40,8 +40,8 @@ pub struct AllocRes {
     pub state: RevisionState,
     pub upload_id: String,
     pub upload_url: String,
-    pub bytes: usize,
-    pub resume_pos: usize,
+    pub bytes: u64,
+    pub resume_pos: u64,
 }
 
 #[serde_as]
@@ -50,7 +50,7 @@ pub struct AllocRes {
 pub struct CompleteUploadRes {
     #[serde(with = "crate::serde::md5_hex")]
     pub md5: Digest,
-    pub bytes: usize,
+    pub bytes: u64,
     pub content_id: String,
     pub path: Path,
     #[serde_as(as = "serde_with::TimestampMilliSeconds<i64>")]
@@ -60,7 +60,7 @@ pub struct CompleteUploadRes {
 #[derive(Debug)]
 pub struct IncompleteUploadRes {
     /// Range of the bytes uploaded now -- NOT the total bytes uploaded (for all chunks).
-    pub range: RangeInclusive<usize>,
+    pub range: RangeInclusive<u64>,
 }
 
 #[derive(Debug)]

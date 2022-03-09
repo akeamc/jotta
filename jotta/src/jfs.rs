@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use md5::Digest;
+use num::{Integer, Signed};
 use reqwest::{header, Client};
 use serde::Deserialize;
 
@@ -19,7 +20,7 @@ pub struct Device {
     #[serde(rename = "type")]
     pub typ: String,
     pub sid: Uuid,
-    pub size: usize,
+    pub size: u64,
     #[serde_as(as = "OptTypoDateTime")]
     pub modified: Option<DateTime<Utc>>,
 }
@@ -30,17 +31,71 @@ pub struct Devices {
     pub devices: Vec<Device>,
 }
 
+/// For storage quotas, Jottacloud returns `-1` to signify
+/// infinity. This struct is fool proof.
+#[derive(Debug, Clone, Copy)]
+pub enum MaybeUnlimited<T: Integer + Signed> {
+    /// Unlimited. Jottacloud calls this `-1`.
+    Unlimited,
+    /// Limited.
+    Limited(T),
+}
+
+impl<'de, T: Deserialize<'de> + Integer + Signed> Deserialize<'de> for MaybeUnlimited<T> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let raw = T::deserialize(deserializer)?;
+        if raw < T::zero() {
+            Ok(Self::Unlimited)
+        } else {
+            Ok(Self::Limited(raw))
+        }
+    }
+}
+
+impl<T: Integer + Signed + Copy> MaybeUnlimited<T> {
+    /// Is it unlimited?
+    pub fn is_unlimited(&self) -> bool {
+        matches!(self, Self::Unlimited)
+    }
+
+    /// Is it limited?
+    pub fn is_limited(&self) -> bool {
+        self.limit().is_some()
+    }
+
+    /// Optional limit.
+    pub fn limit(&self) -> Option<T> {
+        match self {
+            MaybeUnlimited::Unlimited => None,
+            MaybeUnlimited::Limited(limit) => Some(*limit),
+        }
+    }
+}
+
+/// User metadata.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all(deserialize = "kebab-case"))]
 #[allow(clippy::struct_excessive_bools)]
 pub struct UserInfo {
+    /// Username. Often `jc.........`.
     pub username: String,
+
+    /// Type of account, e.g. `"Unlimited"`.
     pub account_type: String,
+
+    /// Is the account locked?
     pub locked: bool,
-    pub capacity: isize,
-    pub max_devices: isize,
-    pub max_mobile_devices: isize,
-    pub usage: usize,
+
+    /// Storage capacity in bytes
+    pub capacity: MaybeUnlimited<i64>,
+
+    /// Maximum allowed number of devices.
+    pub max_devices: MaybeUnlimited<i64>,
+    pub max_mobile_devices: MaybeUnlimited<i32>,
+    pub usage: u64,
     pub read_locked: bool,
     pub write_locked: bool,
     pub quota_write_locked: bool,
@@ -70,7 +125,7 @@ pub async fn get_user(client: &Client, token: &AccessToken) -> crate::Result<Use
 #[derive(Debug, Deserialize)]
 pub struct MountPoint {
     pub name: String,
-    pub size: usize,
+    pub size: u64,
     #[serde_as(as = "OptTypoDateTime")]
     pub modified: Option<DateTime<Utc>>,
 }
@@ -88,7 +143,7 @@ pub struct DeviceInfo {
     #[serde(rename = "type")]
     pub typ: String,
     pub sid: Uuid,
-    pub size: usize,
+    pub size: u64,
     pub modified: String,
     pub user: String,
     #[serde(rename(deserialize = "mountPoints"))]
@@ -113,7 +168,7 @@ pub async fn get_device(
     read_xml(res).await
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum RevisionState {
     Completed,
@@ -121,21 +176,45 @@ pub enum RevisionState {
     Corrupt,
 }
 
+/// A file revision.
+#[serde_as]
 #[derive(Debug, Deserialize)]
 pub struct Revision {
-    pub number: usize,
+    /// Which number in order this revision is. First is 1.
+    pub number: u32,
+    /// State of the revision, mostly relevant when uploading.
     pub state: RevisionState,
-    pub created: String,
-    pub modified: String,
+    /// Creation timestamp.
+    #[serde_as(as = "OptTypoDateTime")]
+    pub created: Option<DateTime<Utc>>,
+    /// Modification timestamp.
+    #[serde_as(as = "OptTypoDateTime")]
+    pub modified: Option<DateTime<Utc>>,
+    /// Mime type of the revision.
     pub mime: String,
     /// `size` can be `None` if the revision is corrupted.
     ///
     /// Incomplete revisions grow as more data is uploaded,
     /// i.e. they do not have their allocated sizes from the start.
-    pub size: Option<usize>,
+    pub size: Option<u64>,
     #[serde(with = "crate::serde::md5_hex")]
+    /// MD5 checksum.
     pub md5: Digest,
-    pub updated: String,
+    /// When the revision was last updated.
+    ///
+    /// I think this tells you when the data itself was last updated (for chunked
+    /// uploads, for example) in contrast to the `modified` field which can be set
+    /// by the user upon allocation.
+    #[serde_as(as = "OptTypoDateTime")]
+    pub updated: Option<DateTime<Utc>>,
+}
+
+impl Revision {
+    /// Is the revision completely uploaded without errors?
+    #[must_use]
+    pub fn is_complete(&self) -> bool {
+        self.state == RevisionState::Completed
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -163,19 +242,27 @@ pub struct Folders {
     pub folders: Vec<Folder>,
 }
 
+/// Metadata returned when indexing.
 #[derive(Debug, Deserialize)]
 pub struct IndexMeta {
     // pub first: Option<usize>,
     // pub max: Option<usize>,
-    pub total: usize,
-    pub num_folders: usize,
-    pub num_files: usize,
+    /// Total number of files and folders combined.
+    pub total: u32,
+    /// Total number of folders.
+    pub num_folders: u32,
+    /// Total number of files.
+    pub num_files: u32,
 }
 
+/// Data returned when indexing (like `ls`, in a sense).
+#[serde_as]
 #[derive(Debug, Deserialize)]
 pub struct Index {
+    /// Name of the indexed folder.
     pub name: String,
-    // pub time: DateTime<Utc>, // format is YYYY-MM-DD-THH:mm:ssZ for some reason (note the "-" before T)
+    #[serde_as(as = "OptTypoDateTime")]
+    pub time: Option<DateTime<Utc>>,
     pub path: Path,
     pub host: String,
     #[serde(default)]
@@ -191,18 +278,24 @@ pub struct Revisions {
     pub revisions: Vec<Revision>,
 }
 
+/// File metadata.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all(deserialize = "camelCase"))]
 pub struct FileMeta {
+    /// Filename.
     pub name: String,
+    /// Id of the file.
     pub uuid: Uuid,
+    /// Path of the file.
     pub path: Path,
+    /// Absolute path of the file, whatever that means.
     pub abspath: Path,
 
     /// The upcoming revision.
     ///
     /// Probably never has a [`state`] of [`Completed`](RevisionState::Completed).
     pub latest_revision: Option<Revision>,
+    /// The optional current revision, which always should have a state of `Completed`.
     pub current_revision: Option<Revision>,
     #[serde(default)]
     /// **Earlier** revisions.
@@ -214,14 +307,13 @@ impl FileMeta {
     /// `Corrupted`) and if `current_revision` has a state of `Completed`.
     #[must_use]
     pub fn last_upload_complete(&self) -> bool {
-        self.latest_revision.is_none()
-            && matches!(
-                &self.current_revision,
-                Some(Revision {
-                    state: RevisionState::Completed,
-                    ..
-                })
-            )
+        if self.latest_revision.is_none() {
+            if let Some(current_revision) = &self.current_revision {
+                return current_revision.is_complete();
+            }
+        }
+
+        false
     }
 }
 

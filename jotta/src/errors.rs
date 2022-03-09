@@ -17,7 +17,7 @@ pub enum Error {
     #[error("jotta error")]
     JottaError(ApiResError),
 
-    /// XML parse error.
+    /// XML deserialization error.
     #[error("xml error: {0}")]
     XmlError(#[from] serde_xml_rs::Error),
 }

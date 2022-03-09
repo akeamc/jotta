@@ -3,7 +3,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Utc};
 
 use reqwest::{header, Client};
 use serde::{Deserialize, Serialize};
@@ -52,7 +52,7 @@ impl<P: AuthProvider> TokenStore<P> {
             let lock = self.access_token.read().unwrap();
 
             if let Some(ref access_token) = *lock {
-                return Ok(access_token.to_owned());
+                return Ok(access_token.clone());
             }
         }
 
@@ -78,6 +78,8 @@ impl<P: AuthProvider> TokenStore<P> {
         let access_token = AccessToken::new(cookie.value().into());
 
         *self.access_token.write().unwrap() = Some(access_token.clone());
+
+        println!("{}", access_token);
 
         Ok(access_token)
     }
