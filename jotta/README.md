@@ -8,7 +8,7 @@ You need to allocate before uploading:
 
 `POST https://api.jottacloud.com/files/v1/allocate`
 
-The **JSON body** must contain a `md5` field, which makes streaming complicated.
+The **JSON body** must contain an `md5` field, which makes streaming complicated.
 
 A successful allocation will return an `upload_url` that you can `POST` the data to.
 

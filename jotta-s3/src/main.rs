@@ -1,9 +1,8 @@
-use std::{env, slice::SliceIndex, str::FromStr};
+use std::env;
 
 use jotta::{
     auth::{provider, TokenStore},
-    fs::Fs,
-    Path,
+    jfs::list_mountpoints,
 };
 use reqwest::Client;
 
@@ -21,18 +20,13 @@ async fn main() {
 
     let access_token = store.get_access_token(&client).await.unwrap();
 
-    let fs = Fs::new(access_token);
+    // let fs = Fs::new(access_token);
 
-    // let user = get_user(&client, &access_token).await.unwrap();
-
-    // dbg!(user);
-
-    let res = fs
-        .index(&Path::from_str("jotta/archive").unwrap())
+    let dev = list_mountpoints(&client, &access_token, "Jotta")
         .await
         .unwrap();
 
-    dbg!(res);
+    dbg!(dev);
 
     // let mut file = File::open("rand").await.unwrap();
     // let total = file.metadata().await.unwrap().len() as usize;

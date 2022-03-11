@@ -1,3 +1,4 @@
+//! API client utilities.
 use reqwest::Response;
 use serde::{de::DeserializeOwned, Deserialize};
 
@@ -62,7 +63,7 @@ pub struct XmlErrorBody {
 ///
 /// - invalid json
 /// - malformed json
-pub async fn read_json<T: DeserializeOwned>(
+pub(crate) async fn read_json<T: DeserializeOwned>(
     res: Response,
 ) -> reqwest::Result<Result<T, JsonErrorBody>> {
     if res.status().is_success() {
@@ -79,11 +80,9 @@ pub async fn read_json<T: DeserializeOwned>(
 ///
 /// - invalid utf-8 response body
 /// - invalid xml
-pub async fn read_xml<T: DeserializeOwned>(res: Response) -> crate::Result<T> {
+pub(crate) async fn read_xml<T: DeserializeOwned>(res: Response) -> crate::Result<T> {
     let status = res.status();
     let xml = res.text().await?;
-
-    println!("{}", xml);
 
     if status.is_success() {
         let data = serde_xml_rs::from_str(&xml)?;

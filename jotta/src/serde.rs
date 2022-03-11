@@ -12,14 +12,10 @@ use serde_with::DeserializeAs;
 /// 2022-02-24T04:20:00Z
 /// ```
 fn parse_typo_datetime(s: &str) -> Result<DateTime<Utc>, chrono::ParseError> {
-    dbg!(s);
+    let datetime = NaiveDateTime::parse_from_str(s, "%Y-%m-%d-T%H:%M:%SZ")?;
+    let datetime = Utc.from_local_datetime(&datetime).unwrap();
 
-    let dt = NaiveDateTime::parse_from_str(s, "%Y-%m-%d-T%H:%M:%SZ")?;
-    let dt = Utc.from_local_datetime(&dt).unwrap();
-
-    dbg!(dt);
-
-    Ok(dt)
+    Ok(datetime)
 }
 
 pub(crate) struct OptTypoDateTime;

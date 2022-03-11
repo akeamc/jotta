@@ -1,3 +1,5 @@
+//! A higher-level but still pretty low-level Jottacloud client with
+//! basic filesystem capabilities.
 use std::{
     fmt::Display,
     ops::{RangeBounds, RangeInclusive},
@@ -72,13 +74,13 @@ impl Fs {
     /// - jottacloud errors
     /// - too little space left? (not verified)
     pub async fn allocate(&self, req: &AllocReq<'_>) -> crate::Result<AllocRes> {
-        let res = self
+        let response = self
             .files_v1_req_builder(Method::POST, "allocate")?
             .json(req)
             .send()
             .await?;
 
-        Ok(read_json(res).await??)
+        Ok(read_json(response).await??)
     }
 
     /// Upload some or all data. `upload_url` is acquired from [`Fs::allocate`].
@@ -107,8 +109,7 @@ impl Fs {
             .send()
             .await?;
 
-        let pool = res.headers().get("pool");
-        dbg!(pool);
+        // let pool = res.headers().get("pool");
 
         let res = match read_json::<CompleteUploadRes>(res).await? {
             Ok(complete) => UploadRes::Complete(complete),
@@ -208,19 +209,23 @@ pub struct OptionalByteRange {
     end: Option<u64>,
 }
 
+#[allow(clippy::len_without_is_empty)]
 impl OptionalByteRange {
+    /// Total length of the range.
     #[must_use]
-    fn len(&self) -> Option<u64> {
+    pub fn len(&self) -> Option<u64> {
         self.end.map(|end| end + 1 - self.start.unwrap_or(0))
     }
 
+    /// Start of the range.
     #[must_use]
-    fn start(&self) -> u64 {
+    pub fn start(&self) -> u64 {
         self.start.unwrap_or(0)
     }
 
+    /// End of the range.
     #[must_use]
-    fn end(&self) -> Option<u64> {
+    pub fn end(&self) -> Option<u64> {
         self.end
     }
 }

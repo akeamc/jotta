@@ -1,3 +1,4 @@
+//! XML and Serde don't work well together. Pain.
 use chrono::{DateTime, Utc};
 use md5::Digest;
 use num::{Integer, Signed};
@@ -12,21 +13,36 @@ use crate::auth::AccessToken;
 use crate::serde::OptTypoDateTime;
 use crate::Path;
 
+/// A Jottacloud device is used for sync and backup of files. The special `"Jotta"`
+/// device contains the `"Archive"` mountpoint.
 #[serde_as]
 #[derive(Debug, Deserialize)]
 pub struct Device {
+    /// Name.
     pub name: String,
+
+    /// Display name.
     pub display_name: String,
+
+    /// Type of device, e.g. `"LAPTOP"` or `"JOTTA"`.
     #[serde(rename = "type")]
     pub typ: String,
+
+    /// Some kind of id.
     pub sid: Uuid,
+
+    /// Size of the device in bytes.
     pub size: u64,
+
+    /// Last-modified timestamp. A value of `None` means never.
     #[serde_as(as = "OptTypoDateTime")]
     pub modified: Option<DateTime<Utc>>,
 }
 
+/// A vector of devices.
 #[derive(Debug, Deserialize)]
 pub struct Devices {
+    /// Devices.
     #[serde(rename = "$value")]
     pub devices: Vec<Device>,
 }
@@ -75,11 +91,11 @@ impl<T: Integer + Signed + Copy> MaybeUnlimited<T> {
     }
 }
 
-/// User metadata.
+/// Account metadata.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all(deserialize = "kebab-case"))]
 #[allow(clippy::struct_excessive_bools)]
-pub struct UserInfo {
+pub struct AccountInfo {
     /// Username. Often `jc.........`.
     pub username: String,
 
@@ -93,18 +109,40 @@ pub struct UserInfo {
     pub capacity: MaybeUnlimited<i64>,
 
     /// Maximum allowed number of devices.
-    pub max_devices: MaybeUnlimited<i64>,
+    pub max_devices: MaybeUnlimited<i32>,
+
+    /// Maximum number of mobile devices.
     pub max_mobile_devices: MaybeUnlimited<i32>,
+
+    /// Storage usage in bytes.
     pub usage: u64,
+
+    /// Is read access restricted?
     pub read_locked: bool,
+
+    /// Is write access restricted?
     pub write_locked: bool,
+
+    /// Is the upload speed throttled?
     pub quota_write_locked: bool,
+
+    /// Is sync enabled?
     pub enable_sync: bool,
+
+    /// Is folder share enabled?
     pub enable_foldershare: bool,
+
+    /// Devices belonging to this account.
     pub devices: Devices,
 }
 
-pub async fn get_user(client: &Client, token: &AccessToken) -> crate::Result<UserInfo> {
+/// Get information about the current account.
+///
+/// # Errors
+///
+/// - network error
+/// - jottacloud error
+pub async fn get_account(client: &Client, token: &AccessToken) -> crate::Result<AccountInfo> {
     let res = client
         .get(format!(
             "https://jfs.jottacloud.com/jfs/{}",
@@ -121,40 +159,45 @@ pub async fn get_user(client: &Client, token: &AccessToken) -> crate::Result<Use
     Ok(info)
 }
 
+/// A Jottacloud mount point is like a root directory for uploading and syncing files.
 #[serde_as]
 #[derive(Debug, Deserialize)]
 pub struct MountPoint {
+    /// Name of the mountpoint, e.g. `"Archive"`, `"Shared"` and `"Sync"`.
     pub name: String,
+
+    /// Total size of the mount point (disk usage in other words).
     pub size: u64,
+
+    /// Last modification of the mount point. `None` menas never.
     #[serde_as(as = "OptTypoDateTime")]
     pub modified: Option<DateTime<Utc>>,
 }
 
-#[derive(Debug, Deserialize)]
-pub struct MountPoints {
-    #[serde(rename = "$value")]
-    pub mount_points: Vec<MountPoint>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct DeviceInfo {
-    pub name: String,
-    pub display_name: String,
-    #[serde(rename = "type")]
-    pub typ: String,
-    pub sid: Uuid,
-    pub size: u64,
-    pub modified: String,
-    pub user: String,
-    #[serde(rename(deserialize = "mountPoints"))]
-    pub mount_points: MountPoints,
-}
-
-pub async fn get_device(
+/// List mount points of a device. The device name is case-insensitive.
+///
+/// # Errors
+///
+/// - jottacloud error
+/// - network
+/// - no device found with that name
+pub async fn list_mountpoints(
     client: &Client,
     token: &AccessToken,
     device_name: &str,
-) -> crate::Result<DeviceInfo> {
+) -> crate::Result<Vec<MountPoint>> {
+    #[derive(Debug, Deserialize)]
+    struct MountPoints {
+        #[serde(rename = "$value")]
+        inner: Vec<MountPoint>,
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct Res {
+        #[serde(rename(deserialize = "mountPoints"))]
+        mount_points: MountPoints,
+    }
+
     let res = client
         .get(format!(
             "https://jfs.jottacloud.com/jfs/{}/{}",
@@ -165,14 +208,20 @@ pub async fn get_device(
         .send()
         .await?;
 
-    read_xml(res).await
+    let data: Res = read_xml(res).await?;
+
+    Ok(data.mount_points.inner)
 }
 
+/// State of a revision.
 #[derive(Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum RevisionState {
+    /// The revision is correctly uploaded.
     Completed,
+    /// The revision is not completely uploaded.
     Incomplete,
+    /// A corrupt revision is often caused by a checksum mismatch.
     Corrupt,
 }
 
@@ -217,29 +266,39 @@ impl Revision {
     }
 }
 
+/// A file. Might have multiple versions.
 #[derive(Debug, Deserialize)]
-pub struct File {
+pub struct ListedFile {
+    /// File name.
     pub name: String,
+    /// Id, but I don't know exactly how unique it is. Maybe other users have files with the same ids?
     pub uuid: Uuid,
     #[serde(rename(deserialize = "currentRevision"))]
+    /// Current revision of the file.
     pub current_revision: Revision,
 }
 
+/// Files wrapper.
 #[derive(Debug, Deserialize, Default)]
 pub struct Files {
+    /// Files.
     #[serde(rename = "$value")]
-    pub files: Vec<File>,
+    pub inner: Vec<ListedFile>,
 }
 
+/// Basic folder information.
 #[derive(Debug, Deserialize)]
 pub struct Folder {
+    /// Name of the folder.
     pub name: String,
 }
 
+/// Folders wrapper.
 #[derive(Debug, Deserialize, Default)]
 pub struct Folders {
+    /// Folders.
     #[serde(rename = "$value")]
-    pub folders: Vec<Folder>,
+    pub inner: Vec<Folder>,
 }
 
 /// Metadata returned when indexing.
@@ -261,21 +320,28 @@ pub struct IndexMeta {
 pub struct Index {
     /// Name of the indexed folder.
     pub name: String,
-    #[serde_as(as = "OptTypoDateTime")]
-    pub time: Option<DateTime<Utc>>,
+
+    /// Path.
     pub path: Path,
-    pub host: String,
+
+    /// Subfolders.
     #[serde(default)]
     pub folders: Folders,
+
+    /// Files.
     #[serde(default)]
     pub files: Files,
+
+    /// Metadata, such as paging info.
     pub metadata: IndexMeta,
 }
 
+/// Revisions wrapper (for XML compatability).
 #[derive(Debug, Deserialize, Default)]
 pub struct Revisions {
+    /// Inner revisions.
     #[serde(rename = "$value")]
-    pub revisions: Vec<Revision>,
+    pub inner: Vec<Revision>,
 }
 
 /// File metadata.
@@ -316,28 +382,3 @@ impl FileMeta {
         false
     }
 }
-
-// pub async fn open(client: &Client, token: &AccessToken, path: &Path) -> crate::Result<Stream<Item = reqwest::Result<Bytes>>> {
-//     let mut res = client
-//         .get(format!(
-//             "https://jfs.jottacloud.com/jfs/{}/{}?mode=bin",
-//             token.username(),
-//             path
-//         ))
-//         .header(header::AUTHORIZATION, format!("Bearer {}", token))
-//         // .header("range", "bytes=0-3")
-//         .send()
-//         .await?;
-
-//     if !res.status().is_success() {
-//         let err_xml = res.text().await?;
-//         let err: XmlErrorBody = serde_xml_rs::from_str(&err_xml)?;
-//         return Err(err.into());
-//     }
-
-//     // let md5 = res.header(headers::ETAG).and_then(|etag| hex_to_digest(etag.as_str()).ok());
-
-//     // println!("md5 digest: {:x?}", md5);
-
-//     Ok(res.bytes_stream())
-// }

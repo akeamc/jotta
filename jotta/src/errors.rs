@@ -1,3 +1,4 @@
+//! Nobody is perfect.
 use thiserror::Error;
 
 use crate::api::{JsonErrorBody, XmlErrorBody};

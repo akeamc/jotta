@@ -1,3 +1,10 @@
+//! Authentication and authorization for Jottacloud itself and whitelabel providers.
+//!
+//! ```
+//! use jotta::auth::{TokenStore, provider::Tele2};
+//!
+//! let store = TokenStore::<Tele2>::new("refresh_token", "session_id");
+//! ```
 use std::{
     marker::PhantomData,
     sync::{Arc, RwLock},
@@ -11,7 +18,7 @@ use serde_with::serde_as;
 use tracing::instrument;
 
 /// Generic auth provider.
-pub trait AuthProvider {
+pub trait Provider {
     /// Name of the session cookie, e.g. `jottacloud.session`.
     const SESSION_COOKIE_NAME: &'static str;
 
@@ -21,22 +28,22 @@ pub trait AuthProvider {
 
 /// A thread-safe caching token store.
 #[derive(Debug, Clone)]
-pub struct TokenStore<P: AuthProvider> {
+pub struct TokenStore<P: Provider> {
     refresh_token: String,
     session_id: String,
     access_token: Arc<RwLock<Option<AccessToken>>>,
     provider: PhantomData<P>,
 }
 
-impl<P: AuthProvider> TokenStore<P> {
+impl<P: Provider> TokenStore<P> {
     /// Construct a new [`TokenStore`].
     #[must_use]
-    pub fn new(refresh_token: String, session_id: String) -> Self {
+    pub fn new(refresh_token: impl Into<String>, session_id: impl Into<String>) -> Self {
         Self {
-            refresh_token,
-            session_id,
-            access_token: Default::default(),
-            provider: Default::default(),
+            refresh_token: refresh_token.into(),
+            session_id: session_id.into(),
+            access_token: Arc::new(RwLock::new(None)),
+            provider: PhantomData::default(),
         }
     }
 
@@ -79,15 +86,13 @@ impl<P: AuthProvider> TokenStore<P> {
 
         *self.access_token.write().unwrap() = Some(access_token.clone());
 
-        println!("{}", access_token);
-
         Ok(access_token)
     }
 }
 
 /// Auth providers.
 pub mod provider {
-    use super::AuthProvider;
+    use super::Provider;
 
     macro_rules! provider {
         ($name:ident, $domain:literal, $cookie_name:literal) => {
@@ -96,7 +101,7 @@ pub mod provider {
             #[derive(Debug)]
             pub struct $name;
 
-            impl AuthProvider for $name {
+            impl Provider for $name {
                 const DOMAIN: &'static str = $domain;
 
                 const SESSION_COOKIE_NAME: &'static str = $cookie_name;
