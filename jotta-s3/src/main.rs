@@ -1,10 +1,10 @@
-use std::env;
+use std::{env, str::FromStr};
 
 use jotta::{
     auth::{provider, TokenStore},
-    jfs::list_mountpoints,
+    fs::Fs,
+    path::AbsolutePath,
 };
-use reqwest::Client;
 
 #[tokio::main]
 async fn main() {
@@ -15,27 +15,18 @@ async fn main() {
     let refresh_token = env::var("REFRESH_TOKEN").expect("REFRESH_TOKEN not set");
     let session_id = env::var("SESSION_ID").expect("SESSION_ID not set");
 
-    let mut store = TokenStore::<provider::Jottacloud>::new(refresh_token, session_id);
-    let client = Client::new();
+    let store = TokenStore::<provider::Jottacloud>::new(refresh_token, session_id);
 
-    let access_token = store.get_access_token(&client).await.unwrap();
-
-    // let fs = Fs::new(access_token);
-
-    let dev = list_mountpoints(&client, &access_token, "Jotta")
-        .await
-        .unwrap();
-
-    dbg!(dev);
+    let fs = Fs::new(store);
 
     // let mut file = File::open("rand").await.unwrap();
-    // let total = file.metadata().await.unwrap().len() as usize;
-    // let digest = md5::Digest(hex!("41e09dc705b115dc14d8b5606666a9c3"));
+    // let total = file.metadata().await.unwrap().len();
+    // let digest = md5::Digest(hex!("4fe28312fdea186737995086f4edd905"));
 
     // let res = fs
     //     .allocate(&AllocReq {
-    //         path: &Path::from_str("Archive/s3-test/rand2").unwrap(),
-    //         bytes: total,
+    //         path: &PathOnDevice::from_str("Archive/s3-test/rand70").unwrap(),
+    //         bytes: total as _,
     //         md5: digest,
     //         conflict_handler: ConflictHandler::RejectConflicts,
     //         created: None,
@@ -46,9 +37,7 @@ async fn main() {
 
     // dbg!(&res);
 
-    // file.seek(SeekFrom::Start(res.resume_pos as _))
-    //     .await
-    //     .unwrap();
+    // file.seek(SeekFrom::Start(res.resume_pos)).await.unwrap();
 
     // let file = BufReader::new(file);
     // let stream = ReaderStream::new(file);
@@ -64,10 +53,20 @@ async fn main() {
 
     // dbg!(res);
 
+    let files = fs
+        .file_meta(&AbsolutePath::from_str("jotta/archive/ship.jpg").unwrap())
+        .await
+        .unwrap();
+
+    dbg!(files);
+
     // let mut file = File::create("example").await.unwrap();
 
     // let mut stream = fs
-    //     .open(&Path::from_str("Jotta/Archive/s3-test/rand").unwrap(), ..)
+    //     .open(
+    //         &AbsolutePath::from_str("Jotta/Archive/s3-test/rand").unwrap(),
+    //         ..,
+    //     )
     //     .await
     //     .unwrap();
 

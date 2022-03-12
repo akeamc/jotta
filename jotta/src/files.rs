@@ -7,14 +7,14 @@ use md5::Digest;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 
-use crate::{jfs::RevisionState, Path};
+use crate::{jfs::RevisionState, path::PathOnDevice};
 
 /// Allocation request.
 #[serde_as]
 #[derive(Debug, Serialize)]
 pub struct AllocReq<'a> {
     /// Path of the file to be uploaded.
-    pub path: &'a Path,
+    pub path: &'a PathOnDevice,
 
     /// How many *more* bytes to allocate.
     pub bytes: u64,
@@ -54,7 +54,7 @@ pub struct AllocRes {
     pub name: String,
 
     /// Path.
-    pub path: Path,
+    pub path: PathOnDevice,
 
     /// State of the file upload (and revision).
     pub state: RevisionState,
@@ -89,7 +89,7 @@ pub struct CompleteUploadRes {
     pub content_id: String,
 
     /// Path.
-    pub path: Path,
+    pub path: PathOnDevice,
 
     /// Modification date.
     #[serde_as(as = "serde_with::TimestampMilliSeconds<i64>")]

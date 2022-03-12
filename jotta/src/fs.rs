@@ -17,52 +17,63 @@ use reqwest::{
 
 use crate::{
     api::{read_json, read_xml, Exception, MaybeUnknown, XmlErrorBody},
-    auth::AccessToken,
+    auth::{self, TokenStore},
     files::{AllocReq, AllocRes, CompleteUploadRes, IncompleteUploadRes, UploadRes},
     jfs::{FileMeta, Index},
-    Path,
+    path::AbsolutePath,
 };
 
 /// A Jottacloud "filesystem".
 #[derive(Debug)]
-pub struct Fs {
+pub struct Fs<P: auth::Provider> {
     client: Client,
-    access_token: AccessToken,
+    token_store: TokenStore<P>,
 }
 
-impl Fs {
+impl<P: auth::Provider> Fs<P> {
     /// Create a new filesystem.
     #[must_use]
-    pub fn new(access_token: AccessToken) -> Self {
+    pub fn new(token_store: TokenStore<P>) -> Self {
         Self {
             client: Client::new(),
-            access_token,
+            token_store,
         }
     }
 
-    fn req_with_token(&self, method: Method, url: impl IntoUrl) -> RequestBuilder {
-        self.client.request(method, url).header(
-            header::AUTHORIZATION,
-            format!("Bearer {}", self.access_token),
-        )
+    async fn req_with_token(
+        &self,
+        method: Method,
+        url: impl IntoUrl,
+    ) -> crate::Result<RequestBuilder> {
+        let access_token = self.token_store.get_access_token(&self.client).await?;
+
+        Ok(self.client.request(method, url).bearer_auth(access_token))
     }
 
-    fn jfs_req(&self, method: Method, path: &str) -> crate::Result<RequestBuilder> {
+    async fn jfs_req(&self, method: Method, path: &str) -> crate::Result<RequestBuilder> {
         static JFS_BASE: Lazy<Url> =
             Lazy::new(|| Url::parse("https://jfs.jottacloud.com/jfs/").unwrap());
 
-        let url = JFS_BASE.join(path)?;
+        let access_token = self.token_store.get_access_token(&self.client).await?;
 
-        Ok(self.req_with_token(method, url))
+        let url = JFS_BASE
+            .join(&format!("{}/", access_token.username()))?
+            .join(path)?;
+
+        Ok(self.client.request(method, url).bearer_auth(access_token))
     }
 
-    fn files_v1_req_builder(&self, method: Method, path: &str) -> crate::Result<RequestBuilder> {
+    async fn files_v1_req_builder(
+        &self,
+        method: Method,
+        path: &str,
+    ) -> crate::Result<RequestBuilder> {
         static FILES_V1_BASE: Lazy<Url> =
             Lazy::new(|| Url::parse("https://api.jottacloud.com/files/v1/").unwrap());
 
         let url = FILES_V1_BASE.join(path)?;
 
-        Ok(self.req_with_token(method, url))
+        self.req_with_token(method, url).await
     }
 
     /// Allocate for uploading a new file or a new file revision.
@@ -75,7 +86,8 @@ impl Fs {
     /// - too little space left? (not verified)
     pub async fn allocate(&self, req: &AllocReq<'_>) -> crate::Result<AllocRes> {
         let response = self
-            .files_v1_req_builder(Method::POST, "allocate")?
+            .files_v1_req_builder(Method::POST, "allocate")
+            .await?
             .json(req)
             .send()
             .await?;
@@ -99,6 +111,7 @@ impl Fs {
     ) -> crate::Result<UploadRes> {
         let res = self
             .req_with_token(Method::POST, upload_url)
+            .await?
             .body(body)
             .header(header::CONTENT_TYPE, "application/octet-stream")
             .header(header::CONTENT_LENGTH, range.end() - range.start())
@@ -131,21 +144,15 @@ impl Fs {
     /// - network errors
     /// - jottacloud errors (including auth)
     /// - path doesn't exist
-    pub async fn index(&self, path: &Path) -> crate::Result<Index> {
+    pub async fn index(&self, path: &AbsolutePath) -> crate::Result<Index> {
         let res = self
-            .jfs_req(
-                Method::GET,
-                &format!("{}/{}", self.access_token.username(), path),
-            )?
+            .jfs_req(Method::GET, &path.to_string())
+            .await?
             .send()
             .await?;
 
         read_xml(res).await
     }
-
-    // pub async fn open(&self, path: &Path) -> crate::Result<()> {
-
-    // }
 
     /// Get metadata associated with a file.
     ///
@@ -154,12 +161,10 @@ impl Fs {
     /// - network errors
     /// - jottacloud errors
     /// - no such file
-    pub async fn file_meta(&self, path: &Path) -> crate::Result<FileMeta> {
+    pub async fn file_meta(&self, path: &AbsolutePath) -> crate::Result<FileMeta> {
         let res = self
-            .jfs_req(
-                Method::GET,
-                &format!("{}/{}", self.access_token.username(), path),
-            )?
+            .jfs_req(Method::GET, &path.to_string())
+            .await?
             .send()
             .await?;
 
@@ -176,16 +181,14 @@ impl Fs {
     /// - jottacloud errors
     pub async fn open(
         &self,
-        path: &Path,
+        path: &AbsolutePath,
         range: impl Into<OptionalByteRange>,
     ) -> crate::Result<impl Stream<Item = reqwest::Result<Bytes>>> {
         let range: OptionalByteRange = range.into();
 
         let res = self
-            .jfs_req(
-                Method::GET,
-                &format!("{}/{}?mode=bin", self.access_token.username(), path),
-            )?
+            .jfs_req(Method::GET, &format!("{}?mode=bin", path))
+            .await?
             // status will be `206 Partial Content` even if the whole body is returned
             .header(header::RANGE, range)
             .send()

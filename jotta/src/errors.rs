@@ -21,6 +21,10 @@ pub enum Error {
     /// XML deserialization error.
     #[error("xml error: {0}")]
     XmlError(#[from] serde_xml_rs::Error),
+
+    /// Authentication error.
+    #[error("auth error: {0}")]
+    AuthError(#[from] crate::auth::Error),
 }
 
 /// All possible errors returned by the upstream Jottacloud API.
@@ -43,3 +47,7 @@ impl From<XmlErrorBody> for Error {
         Self::JottaError(ApiResError::Xml(e))
     }
 }
+
+// impl From<auth::Error> for Error {
+
+// }

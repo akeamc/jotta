@@ -6,16 +6,25 @@
 //! let store = TokenStore::<Tele2>::new("refresh_token", "session_id");
 //! ```
 use std::{
+    fmt::Debug,
     marker::PhantomData,
     sync::{Arc, RwLock},
 };
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 
 use reqwest::{header, Client};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
-use tracing::instrument;
+use tracing::{debug, instrument};
+
+/// Authentication error.
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    /// Token was not successfully renewed.
+    #[error("token renewal failed")]
+    TokenRenewalFailed,
+}
 
 /// Generic auth provider.
 pub trait Provider {
@@ -48,20 +57,29 @@ impl<P: Provider> TokenStore<P> {
     }
 
     /// Get the cached refresh token or renew it.
-    pub async fn get_refresh_token(&mut self, _client: &Client) -> crate::Result<String> {
+    ///
+    /// # Errors
+    ///
+    /// None at the moment.
+    pub async fn get_refresh_token(&self, _client: &Client) -> crate::Result<String> {
         Ok(self.refresh_token.clone())
     }
 
     /// Get the cached access token or renew it if it needs to be renewed.
     #[instrument(skip_all)]
-    pub async fn get_access_token(&mut self, client: &Client) -> crate::Result<AccessToken> {
+    pub async fn get_access_token(&self, client: &Client) -> crate::Result<AccessToken> {
         {
             let lock = self.access_token.read().unwrap();
 
             if let Some(ref access_token) = *lock {
-                return Ok(access_token.clone());
+                if access_token.exp() >= Utc::now() + Duration::minutes(5) {
+                    debug!("found fresh cached access token");
+                    return Ok(access_token.clone());
+                }
             }
         }
+
+        debug!("renewing access token");
 
         let res = client
             .get(format!("https://{}/web/token", P::DOMAIN))
@@ -80,7 +98,7 @@ impl<P: Provider> TokenStore<P> {
         let cookie = res
             .cookies()
             .find(|c| c.name() == "access_token")
-            .expect("no cookie :(");
+            .ok_or(Error::TokenRenewalFailed)?;
 
         let access_token = AccessToken::new(cookie.value().into());
 

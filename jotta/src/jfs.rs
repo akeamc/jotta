@@ -10,8 +10,8 @@ use uuid::Uuid;
 
 use crate::api::read_xml;
 use crate::auth::AccessToken;
+use crate::path::AbsolutePath;
 use crate::serde::OptTypoDateTime;
-use crate::Path;
 
 /// A Jottacloud device is used for sync and backup of files. The special `"Jotta"`
 /// device contains the `"Archive"` mountpoint.
@@ -322,7 +322,7 @@ pub struct Index {
     pub name: String,
 
     /// Path.
-    pub path: Path,
+    pub path: AbsolutePath,
 
     /// Subfolders.
     #[serde(default)]
@@ -352,19 +352,19 @@ pub struct FileMeta {
     pub name: String,
     /// Id of the file.
     pub uuid: Uuid,
-    /// Path of the file.
-    pub path: Path,
-    /// Absolute path of the file, whatever that means.
-    pub abspath: Path,
+    /// Path to the folder containing this file.
+    pub path: AbsolutePath,
+    /// Absolute path to the folder containing this file, whatever that means.
+    pub abspath: AbsolutePath,
 
     /// The upcoming revision.
     ///
-    /// Probably never has a [`state`] of [`Completed`](RevisionState::Completed).
+    /// Probably never has a `state` of [`Completed`](RevisionState::Completed).
     pub latest_revision: Option<Revision>,
     /// The optional current revision, which always should have a state of `Completed`.
     pub current_revision: Option<Revision>,
-    #[serde(default)]
     /// **Earlier** revisions.
+    #[serde(default)]
     pub revisions: Revisions,
 }
 

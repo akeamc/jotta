@@ -84,6 +84,8 @@ pub(crate) async fn read_xml<T: DeserializeOwned>(res: Response) -> crate::Resul
     let status = res.status();
     let xml = res.text().await?;
 
+    println!("{}", xml);
+
     if status.is_success() {
         let data = serde_xml_rs::from_str(&xml)?;
         Ok(data)
