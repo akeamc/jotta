@@ -20,7 +20,7 @@ use crate::{
     auth::{self, TokenStore},
     files::{AllocReq, AllocRes, CompleteUploadRes, IncompleteUploadRes, UploadRes},
     jfs::{FileMeta, Index},
-    path::AbsolutePath,
+    path::UserScopedPath,
 };
 
 /// A Jottacloud "filesystem".
@@ -144,12 +144,8 @@ impl<P: auth::Provider> Fs<P> {
     /// - network errors
     /// - jottacloud errors (including auth)
     /// - path doesn't exist
-    pub async fn index(&self, path: &AbsolutePath) -> crate::Result<Index> {
-        let res = self
-            .jfs_req(Method::GET, &path.to_string())
-            .await?
-            .send()
-            .await?;
+    pub async fn index(&self, path: &UserScopedPath) -> crate::Result<Index> {
+        let res = self.jfs_req(Method::GET, path).await?.send().await?;
 
         read_xml(res).await
     }
@@ -161,12 +157,8 @@ impl<P: auth::Provider> Fs<P> {
     /// - network errors
     /// - jottacloud errors
     /// - no such file
-    pub async fn file_meta(&self, path: &AbsolutePath) -> crate::Result<FileMeta> {
-        let res = self
-            .jfs_req(Method::GET, &path.to_string())
-            .await?
-            .send()
-            .await?;
+    pub async fn file_meta(&self, path: &UserScopedPath) -> crate::Result<FileMeta> {
+        let res = self.jfs_req(Method::GET, path).await?.send().await?;
 
         read_xml(res).await
     }
@@ -181,7 +173,7 @@ impl<P: auth::Provider> Fs<P> {
     /// - jottacloud errors
     pub async fn open(
         &self,
-        path: &AbsolutePath,
+        path: &UserScopedPath,
         range: impl Into<OptionalByteRange>,
     ) -> crate::Result<impl Stream<Item = reqwest::Result<Bytes>>> {
         let range: OptionalByteRange = range.into();

@@ -1,19 +1,22 @@
-use std::{env, io::SeekFrom, str::FromStr};
+use std::env;
 
-use futures_util::StreamExt;
-use hex_literal::hex;
-use jotta_fs::{
-    auth::{provider, TokenStore},
-    files::{AllocReq, ConflictHandler},
-    path::{AbsolutePath, PathOnDevice},
-    Fs, OptionalByteRange,
-};
-use reqwest::Body;
-use tokio::{
-    fs::File,
-    io::{AsyncSeekExt, AsyncWriteExt, BufReader},
-};
-use tokio_util::io::ReaderStream;
+// use futures_util::StreamExt;
+// use hex_literal::hex;
+// use jotta_fs::{
+//     auth::{provider, TokenStore},
+//     files::{AllocReq, ConflictHandler},
+//     path::{AbsolutePath, PathOnDevice},
+//     Fs, OptionalByteRange,
+// };
+// use reqwest::Body;
+// use tokio::{
+//     fs::File,
+//     io::{AsyncSeekExt, AsyncWriteExt, BufReader},
+// };
+// use tokio_util::io::ReaderStream;
+use jotta::auth::{provider, TokenStore};
+use jotta::list_buckets;
+use jotta::Fs;
 
 #[tokio::main]
 async fn main() {
@@ -27,6 +30,10 @@ async fn main() {
     let store = TokenStore::<provider::Jottacloud>::new(refresh_token, session_id);
 
     let fs = Fs::new(store);
+
+    let buckets = list_buckets(&fs).await.unwrap();
+
+    dbg!(buckets);
 
     // let mut file = File::open("rand").await.unwrap();
     // let total = file.metadata().await.unwrap().len();
@@ -69,18 +76,18 @@ async fn main() {
 
     // dbg!(files);
 
-    let mut file = File::create("example").await.unwrap();
+    // let mut file = File::create("example").await.unwrap();
 
-    let mut stream = fs
-        .open(
-            &AbsolutePath::from_str("Jotta/Archive/s3-test/rand").unwrap(),
-            OptionalByteRange::full(),
-        )
-        .await
-        .unwrap();
+    // let mut stream = fs
+    //     .open(
+    //         &AbsolutePath::from_str("Jotta/Archive/s3-test/rand").unwrap(),
+    //         OptionalByteRange::full(),
+    //     )
+    //     .await
+    //     .unwrap();
 
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk.unwrap();
-        file.write_all(&chunk).await.unwrap();
-    }
+    // while let Some(chunk) = stream.next().await {
+    //     let chunk = chunk.unwrap();
+    //     file.write_all(&chunk).await.unwrap();
+    // }
 }
