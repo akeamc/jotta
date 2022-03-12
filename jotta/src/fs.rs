@@ -231,6 +231,65 @@ impl OptionalByteRange {
     pub fn end(&self) -> Option<u64> {
         self.end
     }
+
+    /// Construct a full range.
+    ///
+    /// ```
+    /// use jotta::fs::OptionalByteRange;
+    ///
+    /// assert_eq!(OptionalByteRange::full().to_string(), "bytes=0-");
+    /// ```
+    #[must_use]
+    pub fn full() -> Self {
+        Self {
+            start: None,
+            end: None,
+        }
+    }
+
+    /// Convert a standard [`std::ops::Range`] to [`OptionalByteRange`]:
+    ///
+    /// ```
+    /// use jotta::fs::OptionalByteRange;
+    ///
+    /// assert_eq!(OptionalByteRange::try_from_bounds(..5).unwrap().to_string(), "bytes=0-4");
+    /// assert_eq!(OptionalByteRange::try_from_bounds(..).unwrap().to_string(), "bytes=0-");
+    /// assert_eq!(OptionalByteRange::try_from_bounds(3..=4).unwrap().to_string(), "bytes=3-4");
+    /// assert!(OptionalByteRange::try_from_bounds(10..7).is_err()); // reversed
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// This function returns an `Error` if the range is reversed, i.e. `start` comes after `end`.
+    pub fn try_from_bounds(bounds: impl RangeBounds<u64>) -> Result<Self, InvalidRange> {
+        use std::ops::Bound::{Excluded, Included, Unbounded};
+
+        let start = match bounds.start_bound() {
+            Included(i) => Some(*i),
+            Excluded(e) => Some(e + 1),
+            Unbounded => None,
+        };
+
+        let end = match bounds.end_bound() {
+            Included(i) => Some(*i),
+            Excluded(e) => Some(e - 1),
+            Unbounded => None,
+        };
+
+        if start.unwrap_or(0) > end.unwrap_or(u64::MAX) {
+            return Err(InvalidRange::Reversed);
+        }
+
+        Ok(Self { start, end })
+    }
+}
+
+/// Invalid range error.
+#[derive(Debug, thiserror::Error)]
+pub enum InvalidRange {
+    /// Range is reversed.
+    #[error("range is wrong direction")]
+    Reversed,
 }
 
 impl Display for OptionalByteRange {
@@ -248,34 +307,5 @@ impl Display for OptionalByteRange {
 impl From<OptionalByteRange> for HeaderValue {
     fn from(value: OptionalByteRange) -> Self {
         HeaderValue::from_str(&value.to_string()).unwrap()
-    }
-}
-
-impl<R> From<R> for OptionalByteRange
-where
-    R: RangeBounds<u64>,
-{
-    fn from(bounds: R) -> Self {
-        use std::ops::Bound::{Excluded, Included, Unbounded};
-
-        let start = match bounds.start_bound() {
-            Included(i) => Some(*i),
-            Excluded(e) => Some(e + 1),
-            Unbounded => None,
-        };
-
-        let end = match bounds.end_bound() {
-            Included(i) => Some(*i),
-            Excluded(e) => Some(e - 1),
-            Unbounded => None,
-        };
-
-        assert!(
-            start.unwrap_or(0) <= end.unwrap_or(u64::MAX),
-            "range end must not be lower than start"
-        );
-        assert_ne!(end, Some(0), "range must not end at 0");
-
-        Self { start, end }
     }
 }

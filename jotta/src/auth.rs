@@ -163,9 +163,9 @@ impl AccessToken {
         let mut segments = self.0.split('.');
         let _header = segments.next();
         let payload = segments.next().expect("malformed token");
-        let json = base64::decode_config(payload, base64::URL_SAFE_NO_PAD).unwrap();
-        let json = String::from_utf8(json).unwrap();
-        let claims: AccessTokenClaims = serde_json::from_str(&json).unwrap();
+        let json = base64::decode_config(payload, base64::URL_SAFE_NO_PAD).expect("invalid base64");
+        let json = String::from_utf8(json).expect("invalid utf-8");
+        let claims: AccessTokenClaims = serde_json::from_str(&json).expect("parse claims failed");
 
         claims
     }

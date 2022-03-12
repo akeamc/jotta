@@ -1,10 +1,19 @@
-use std::{env, str::FromStr};
+use std::{env, io::SeekFrom, str::FromStr};
 
+use futures_util::StreamExt;
+use hex_literal::hex;
 use jotta::{
     auth::{provider, TokenStore},
-    fs::Fs,
-    path::AbsolutePath,
+    files::{AllocReq, ConflictHandler},
+    fs::{Fs, OptionalByteRange},
+    path::{AbsolutePath, PathOnDevice},
 };
+use reqwest::Body;
+use tokio::{
+    fs::File,
+    io::{AsyncSeekExt, AsyncWriteExt, BufReader},
+};
+use tokio_util::io::ReaderStream;
 
 #[tokio::main]
 async fn main() {
@@ -53,25 +62,25 @@ async fn main() {
 
     // dbg!(res);
 
-    let files = fs
-        .file_meta(&AbsolutePath::from_str("jotta/archive/ship.jpg").unwrap())
-        .await
-        .unwrap();
-
-    dbg!(files);
-
-    // let mut file = File::create("example").await.unwrap();
-
-    // let mut stream = fs
-    //     .open(
-    //         &AbsolutePath::from_str("Jotta/Archive/s3-test/rand").unwrap(),
-    //         ..,
-    //     )
+    // let files = fs
+    //     .file_meta(&AbsolutePath::from_str("jotta/archive/ship.jpg").unwrap())
     //     .await
     //     .unwrap();
 
-    // while let Some(chunk) = stream.next().await {
-    //     let chunk = chunk.unwrap();
-    //     file.write_all(&chunk).await.unwrap();
-    // }
+    // dbg!(files);
+
+    let mut file = File::create("example").await.unwrap();
+
+    let mut stream = fs
+        .open(
+            &AbsolutePath::from_str("Jotta/Archive/s3-test/rand").unwrap(),
+            OptionalByteRange::full(),
+        )
+        .await
+        .unwrap();
+
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.unwrap();
+        file.write_all(&chunk).await.unwrap();
+    }
 }
