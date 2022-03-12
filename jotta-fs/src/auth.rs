@@ -1,7 +1,7 @@
 //! Authentication and authorization for Jottacloud itself and whitelabel providers.
 //!
 //! ```
-//! use jotta::auth::{TokenStore, provider::Tele2};
+//! use jotta_fs::auth::{TokenStore, provider::Tele2};
 //!
 //! let store = TokenStore::<Tele2>::new("refresh_token", "session_id");
 //! ```

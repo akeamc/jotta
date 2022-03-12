@@ -2,11 +2,11 @@ use std::{env, io::SeekFrom, str::FromStr};
 
 use futures_util::StreamExt;
 use hex_literal::hex;
-use jotta::{
+use jotta_fs::{
     auth::{provider, TokenStore},
     files::{AllocReq, ConflictHandler},
-    fs::{Fs, OptionalByteRange},
     path::{AbsolutePath, PathOnDevice},
+    Fs, OptionalByteRange,
 };
 use reqwest::Body;
 use tokio::{

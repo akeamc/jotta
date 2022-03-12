@@ -491,7 +491,14 @@ checksum = "1aab8fc367588b89dcee83ab0fd66b72b50b72fa1904d7095045ace2b0c81c35"
 
 [[package]]
 name = "jotta"
-version = "0.1.2"
+version = "0.1.3"
+dependencies = [
+ "jotta-fs",
+]
+
+[[package]]
+name = "jotta-fs"
+version = "0.1.0"
 dependencies = [
  "async-trait",
  "base64",
@@ -520,7 +527,7 @@ dependencies = [
  "dotenv",
  "futures-util",
  "hex-literal",
- "jotta",
+ "jotta-fs",
  "md5",
  "reqwest",
  "tokio",

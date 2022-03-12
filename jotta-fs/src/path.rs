@@ -84,8 +84,6 @@ impl FromSegments for AbsolutePath {
         let user = iter.next().ok_or(ParseError::MissingUser)?.to_owned();
         let device = iter.next().ok_or(ParseError::MissingDevice)?.to_owned();
 
-        dbg!(&user);
-
         Ok(Self {
             user,
             device,

@@ -5,14 +5,3 @@
     missing_docs,
     clippy::pedantic
 )]
-
-pub mod api;
-pub mod auth;
-pub mod errors;
-pub mod files;
-pub mod fs;
-pub mod jfs;
-pub mod path;
-pub(crate) mod serde;
-
-pub(crate) type Result<T> = core::result::Result<T, errors::Error>;

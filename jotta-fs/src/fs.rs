@@ -235,7 +235,7 @@ impl OptionalByteRange {
     /// Construct a full range.
     ///
     /// ```
-    /// use jotta::fs::OptionalByteRange;
+    /// use jotta_fs::fs::OptionalByteRange;
     ///
     /// assert_eq!(OptionalByteRange::full().to_string(), "bytes=0-");
     /// ```
@@ -250,7 +250,7 @@ impl OptionalByteRange {
     /// Convert a standard [`std::ops::Range`] to [`OptionalByteRange`]:
     ///
     /// ```
-    /// use jotta::fs::OptionalByteRange;
+    /// use jotta_fs::fs::OptionalByteRange;
     ///
     /// assert_eq!(OptionalByteRange::try_from_bounds(..5).unwrap().to_string(), "bytes=0-4");
     /// assert_eq!(OptionalByteRange::try_from_bounds(..).unwrap().to_string(), "bytes=0-");
