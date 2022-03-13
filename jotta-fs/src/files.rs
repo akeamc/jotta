@@ -41,7 +41,7 @@ pub struct AllocReq<'a> {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ConflictHandler {
-    /// Reject any conflicts.
+    /// Reject all conflicts.
     RejectConflicts,
     /// Create a new revision if the file already exists.
     CreateNewRevision,

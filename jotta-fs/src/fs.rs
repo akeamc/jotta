@@ -1,12 +1,12 @@
 //! A higher-level but still pretty low-level Jottacloud client with
 //! basic filesystem capabilities.
 use std::{
-    fmt::Display,
+    fmt::{Debug, Display},
     ops::{RangeBounds, RangeInclusive},
 };
 
 use bytes::Bytes;
-use futures::Stream;
+use futures::{Stream, TryStreamExt};
 
 use once_cell::sync::Lazy;
 
@@ -14,6 +14,7 @@ use reqwest::{
     header::{self, HeaderValue},
     Body, Client, IntoUrl, Method, RequestBuilder, Url,
 };
+use tracing::{debug, instrument};
 
 use crate::{
     api::{read_json, read_xml, Exception, MaybeUnknown, XmlErrorBody},
@@ -24,7 +25,7 @@ use crate::{
 };
 
 /// A Jottacloud "filesystem".
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Fs<P: auth::Provider> {
     client: Client,
     token_store: TokenStore<P>,
@@ -103,7 +104,7 @@ impl<P: auth::Provider> Fs<P> {
     /// - premature end of body (smaller `body` than `range`)
     /// - jottacloud erorr
     /// - network error
-    pub async fn put_data(
+    pub async fn upload_range(
         &self,
         upload_url: &str,
         body: impl Into<Body>,
@@ -171,11 +172,14 @@ impl<P: auth::Provider> Fs<P> {
     /// - range is larger than the file itself
     /// - network errors
     /// - jottacloud errors
+    #[instrument(skip(self, range))]
     pub async fn open(
         &self,
         path: &UserScopedPath,
         range: impl Into<OptionalByteRange>,
-    ) -> crate::Result<impl Stream<Item = reqwest::Result<Bytes>>> {
+    ) -> crate::Result<impl Stream<Item = crate::Result<Bytes>>> {
+        debug!("opening stream to file");
+
         let range: OptionalByteRange = range.into();
 
         let res = self
@@ -192,7 +196,7 @@ impl<P: auth::Provider> Fs<P> {
             return Err(err.into());
         }
 
-        Ok(res.bytes_stream())
+        Ok(res.bytes_stream().map_err(Into::into))
     }
 }
 
@@ -227,7 +231,7 @@ impl OptionalByteRange {
     /// Construct a full range.
     ///
     /// ```
-    /// use jotta_fs::fs::OptionalByteRange;
+    /// use jotta_fs::OptionalByteRange;
     ///
     /// assert_eq!(OptionalByteRange::full().to_string(), "bytes=0-");
     /// ```
@@ -242,7 +246,7 @@ impl OptionalByteRange {
     /// Convert a standard [`std::ops::Range`] to [`OptionalByteRange`]:
     ///
     /// ```
-    /// use jotta_fs::fs::OptionalByteRange;
+    /// use jotta_fs::OptionalByteRange;
     ///
     /// assert_eq!(OptionalByteRange::try_from_bounds(..5).unwrap().to_string(), "bytes=0-4");
     /// assert_eq!(OptionalByteRange::try_from_bounds(..).unwrap().to_string(), "bytes=0-");

@@ -267,15 +267,22 @@ impl Revision {
 }
 
 /// A file. Might have multiple versions.
+#[serde_as]
 #[derive(Debug, Deserialize)]
+#[serde(rename_all(deserialize = "camelCase"))]
 pub struct ListedFile {
     /// File name.
     pub name: String,
     /// Id, but I don't know exactly how unique it is. Maybe other users have files with the same ids?
     pub uuid: Uuid,
-    #[serde(rename(deserialize = "currentRevision"))]
+    /// Deletion date of the file. `None` means it isn't deleted.
+    #[serde_as(as = "OptTypoDateTime")]
+    #[serde(default)]
+    pub deleted: Option<DateTime<Utc>>,
     /// Current revision of the file.
-    pub current_revision: Revision,
+    pub current_revision: Option<Revision>,
+    /// Optional latest revision.
+    pub latest_revision: Option<Revision>,
 }
 
 /// Files wrapper.

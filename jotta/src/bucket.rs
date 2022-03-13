@@ -1,9 +1,11 @@
-use jotta_fs::{auth::Provider, path::UserScopedPath, Fs};
+//! A bucket contains one or more objects.
+use std::fmt::Debug;
 
-const DEVICE: &str = "Jotta";
-const MOUNT_POINT: &str = "Archive";
+use crate::Context;
+use jotta_fs::{auth::Provider, path::UserScopedPath};
+use tracing::{debug, instrument};
 
-/// A bucket contains one or more [`Object`](crate::Object)s.
+/// A bucket contains one or more objects.
 #[derive(Debug)]
 pub struct Bucket {
     /// Name of the bucket.
@@ -15,13 +17,16 @@ pub struct Bucket {
 /// # Errors
 ///
 /// Errors if something goes wrong with the underlying Jotta Filesystem.
-pub async fn list_buckets<P: Provider>(fs: &Fs<P>) -> crate::Result<Vec<Bucket>> {
-    let index = fs
-        .index(&UserScopedPath(format!("{DEVICE}/{MOUNT_POINT}")))
-        .await?;
-    let buckets = index
+#[instrument(skip(ctx))]
+pub async fn list_buckets<P: Provider + Debug>(ctx: &Context<P>) -> crate::Result<Vec<Bucket>> {
+    let folders = ctx
+        .fs
+        .index(&UserScopedPath(ctx.config.user_scoped_root()))
+        .await?
         .folders
-        .inner
+        .inner;
+    debug!("listed {} folders", folders.len());
+    let buckets = folders
         .into_iter()
         .map(|f| Bucket { name: f.name })
         .collect::<Vec<_>>();

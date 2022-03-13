@@ -6,6 +6,7 @@
 //! let store = TokenStore::<Tele2>::new("refresh_token", "session_id");
 //! ```
 use std::{
+    any::type_name,
     fmt::Debug,
     marker::PhantomData,
     sync::{Arc, RwLock},
@@ -36,7 +37,7 @@ pub trait Provider {
 }
 
 /// A thread-safe caching token store.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct TokenStore<P: Provider> {
     refresh_token: String,
     session_id: String,
@@ -105,6 +106,17 @@ impl<P: Provider> TokenStore<P> {
         *self.access_token.write().unwrap() = Some(access_token.clone());
 
         Ok(access_token)
+    }
+}
+
+impl<P: Provider> Debug for TokenStore<P> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TokenStore")
+            .field("refresh_token", &self.refresh_token)
+            .field("session_id", &self.session_id)
+            .field("access_token", &self.access_token)
+            .field("provider", &type_name::<P>())
+            .finish()
     }
 }
 

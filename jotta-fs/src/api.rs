@@ -1,6 +1,7 @@
 //! API client utilities.
 use reqwest::Response;
 use serde::{de::DeserializeOwned, Deserialize};
+use tracing::debug;
 
 /// An exception thrown by the upstream API.
 #[derive(Debug, Deserialize)]
@@ -84,7 +85,7 @@ pub(crate) async fn read_xml<T: DeserializeOwned>(res: Response) -> crate::Resul
     let status = res.status();
     let xml = res.text().await?;
 
-    println!("{}", xml);
+    debug!("{}", xml);
 
     if status.is_success() {
         let data = serde_xml_rs::from_str(&xml)?;
