@@ -3,10 +3,10 @@
 //!
 //! - A `meta` file with metadata about the object.
 //! - One or more binary data chunks.
-use std::{fmt::Debug, str::FromStr, string::FromUtf8Error};
+use std::{fmt::Debug, str::FromStr, string::FromUtf8Error, time::Instant};
 
 use crate::{object::meta::get_meta, Context};
-use bytes::{Buf, Bytes, BytesMut};
+use bytes::{Bytes, BytesMut};
 use chrono::Utc;
 use futures_util::{
     future,
@@ -22,7 +22,7 @@ use jotta_fs::{
 };
 use mime::Mime;
 use tokio::io::{AsyncBufRead, AsyncReadExt};
-use tracing::{error, instrument, warn};
+use tracing::{debug, error, instrument, warn};
 
 use self::meta::{set_meta, ObjectMeta};
 
@@ -207,25 +207,26 @@ async fn upload_chunk<P: Provider>(
 /// # Panics
 ///
 /// May panic on conversions between `u64` and `u32` or `usize`, but only if [`CHUNK_SIZE`] is crazy big for some reason.
+#[instrument(skip(ctx, file))]
 pub async fn upload_range<P: Provider, R>(
     ctx: &Context<P>,
     bucket: &str,
     name: &ObjectName,
     offset: u64,
-    mut file: R,
+    file: R,
+    num_connections: usize,
 ) -> crate::Result<()>
 where
     R: AsyncBufRead + Unpin,
 {
-    let mut chunk_align = offset % CHUNK_SIZE;
-    let mut chunk_no = ((offset - chunk_align) / CHUNK_SIZE).try_into().unwrap();
+    let before = Instant::now();
 
-    let mut buf = BytesMut::with_capacity(CHUNK_SIZE.try_into().unwrap());
-    // let mut buf = [0; CHUNK_SIZE as _];
+    let chunks = stream::unfold((file, offset), move |(mut file, pos)| async move {
+        let chunk_align = pos % CHUNK_SIZE;
+        let chunk_no = (pos / CHUNK_SIZE).try_into().unwrap();
 
-    // file.read(&mut buf);
+        let mut buf = BytesMut::with_capacity(CHUNK_SIZE.try_into().unwrap());
 
-    let min_size = loop {
         if chunk_align != 0 {
             let chunk_path = &UserScopedPath(format!(
                 "{}/{bucket}/{}",
@@ -233,19 +234,16 @@ where
                 name.chunk_path(chunk_no)
             ));
 
-            let mut s = ctx
+            let b = ctx
                 .fs
-                .file_to_stream(
+                .file_to_bytes(
                     chunk_path,
                     OptionalByteRange::try_from_bounds(0..chunk_align).unwrap(),
                 )
-                .await?;
+                .await
+                .unwrap(); // TODO: remove panic opportunity
 
-            while let Some(c) = s.next().await {
-                let c = c.unwrap();
-
-                buf.extend_from_slice(&c);
-            }
+            buf.extend_from_slice(&b);
         }
 
         buf.resize(CHUNK_SIZE.try_into().unwrap(), 0);
@@ -267,26 +265,40 @@ where
 
         if buf.is_empty() {
             // no bytes were written to the buffer
-            break cursor as u64 + u64::from(chunk_no) * CHUNK_SIZE;
+            return None;
         }
 
-        upload_chunk(ctx, bucket, name, chunk_no, buf.copy_to_bytes(buf.len())).await?;
+        // TODO: handle case where there is old data at end of the remote chunk that would be truncated otherwise
 
-        buf.clear();
+        Some((
+            (chunk_no, buf.freeze()),
+            (file, CHUNK_SIZE * u64::from(chunk_no + 1)),
+        ))
+    });
 
-        chunk_no += 1;
-        chunk_align = 0; // subsequent chunks are always aligned
-    };
+    let mut futs = Box::pin(
+        chunks
+            .map(|(chunk_no, buf)| upload_chunk(ctx.clone(), bucket, name, chunk_no, buf))
+            .buffer_unordered(num_connections),
+    );
 
-    let meta = get_meta(ctx, bucket, name).await?;
+    while let Some(res) = futs.next().await {
+        res?
+    }
 
-    let meta = ObjectMeta {
-        size: min_size.max(meta.size),
-        updated: Utc::now(),
-        ..meta
-    };
+    debug!("upload took {:.02?}", before.elapsed());
 
-    set_meta(ctx, bucket, name, &meta, ConflictHandler::CreateNewRevision).await
+    todo!("metadata not uploaded");
+
+    // let meta = get_meta(ctx, bucket, name).await?;
+
+    // let meta = ObjectMeta {
+    //     size: min_size.max(meta.size),
+    //     updated: Utc::now(),
+    //     ..meta
+    // };
+
+    // set_meta(ctx, bucket, name, &meta, ConflictHandler::CreateNewRevision).await
 }
 
 /// Open a stream to an object.
@@ -298,7 +310,7 @@ pub fn open_range<'a, P: Provider>(
     ctx: &'a Context<P>,
     bucket: &'a str,
     name: &'a ObjectName,
-    connections: usize,
+    num_connections: usize,
 ) -> impl Future<Output = crate::Result<(ObjectMeta, impl Stream<Item = crate::Result<Bytes>> + 'a)>> + 'a
 {
     async move {
@@ -328,14 +340,11 @@ pub fn open_range<'a, P: Provider>(
                     }
                 }
             })
-            .buffered(connections);
+            .buffered(num_connections);
 
         let stream = futures
             .take_while(|d| future::ready(d.is_some()))
-            .map(Option::unwrap)
-            // .flatten()
-            // .map_err(Into::into);
-            ;
+            .map(Option::unwrap);
 
         Ok((meta, stream))
     }
