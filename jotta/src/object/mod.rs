@@ -5,12 +5,13 @@
 //! - One or more binary data chunks.
 use std::{fmt::Debug, str::FromStr, string::FromUtf8Error};
 
-use crate::Context;
+use crate::{object::meta::get_meta, Context};
 use bytes::{Buf, Bytes, BytesMut};
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use futures_util::{
+    future,
     stream::{self},
-    Stream, StreamExt, TryStreamExt,
+    Future, Stream, StreamExt,
 };
 
 use jotta_fs::{
@@ -19,9 +20,13 @@ use jotta_fs::{
     path::{PathOnDevice, UserScopedPath},
     OptionalByteRange,
 };
-use serde::{Deserialize, Serialize};
+use mime::Mime;
 use tokio::io::{AsyncBufRead, AsyncReadExt};
-use tracing::{debug, instrument};
+use tracing::{error, instrument, warn};
+
+use self::meta::{set_meta, ObjectMeta};
+
+pub mod meta;
 
 /// Chunk size in bytes.
 ///
@@ -31,21 +36,6 @@ use tracing::{debug, instrument};
 /// Streaming uploads are forced to backtrack when uploading chunks with sizes that are
 /// not multiples of [`CHUNK_SIZE`], since the MD5 checksums need to be recalculated.
 pub const CHUNK_SIZE: u64 = 1 << 20;
-
-/// Metadata associated with each object.
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ObjectMeta {
-    /// Size of the object in bytes.
-    pub size: u64,
-    /// CRC32 checksum.
-    pub crc32c: u32,
-    /// Creation timestamp.
-    pub created: DateTime<Utc>,
-    /// Update timestamp.
-    pub updated: DateTime<Utc>,
-}
-
-impl ObjectMeta {}
 
 /// A human-readable object name.
 ///
@@ -58,6 +48,7 @@ impl ObjectMeta {}
 /// assert!(ObjectName::from_str("bye\r\nlword").is_err());
 /// ```
 #[derive(Debug)]
+#[allow(clippy::module_name_repetitions)]
 pub struct ObjectName(String);
 
 impl ObjectName {
@@ -77,6 +68,11 @@ impl ObjectName {
     }
 
     /// Convert a hexadecimal string to an [`ObjectName`].
+    ///
+    /// # Errors
+    ///
+    /// Errors if the hexadecimal value cannot be parsed. It is not
+    /// as restrictive as the [`FromStr`] implementation.
     pub fn try_from_hex(hex: &str) -> Result<Self, InvalidObjectName> {
         let bytes = hex::decode(hex)?;
         let text = String::from_utf8(bytes)?;
@@ -159,30 +155,18 @@ pub async fn create_object<P: Provider>(
     ctx: &Context<P>,
     bucket: &str,
     name: &ObjectName,
+    content_type: Option<Mime>,
 ) -> crate::Result<()> {
-    let body = "hello";
-    let bytes = body.len().try_into().unwrap();
+    let now = Utc::now();
 
-    let req = AllocReq {
-        path: &PathOnDevice(format!(
-            "{}/{bucket}/{}/header",
-            ctx.config.root_on_device(),
-            name.to_hex()
-        )),
-        bytes,
-        md5: md5::compute(body),
-        conflict_handler: ConflictHandler::RejectConflicts,
-        created: None,
-        modified: None,
+    let meta = ObjectMeta {
+        size: 0,
+        created: now,
+        updated: now,
+        content_type: content_type.unwrap_or(mime::APPLICATION_OCTET_STREAM),
     };
 
-    let upload_url = ctx.fs.allocate(&req).await?.upload_url;
-
-    let res = ctx.fs.upload_range(&upload_url, body, 0..=bytes).await?;
-
-    assert!(matches!(res, UploadRes::Complete(_)));
-
-    Ok(())
+    set_meta(ctx, bucket, name, &meta, ConflictHandler::RejectConflicts).await
 }
 
 #[instrument(skip(ctx, body))]
@@ -241,7 +225,7 @@ where
 
     // file.read(&mut buf);
 
-    loop {
+    let min_size = loop {
         if chunk_align != 0 {
             let chunk_path = &UserScopedPath(format!(
                 "{}/{bucket}/{}",
@@ -251,7 +235,7 @@ where
 
             let mut s = ctx
                 .fs
-                .open(
+                .file_to_stream(
                     chunk_path,
                     OptionalByteRange::try_from_bounds(0..chunk_align).unwrap(),
                 )
@@ -281,11 +265,9 @@ where
 
         buf.resize(cursor, 0);
 
-        println!("buffer is {} bytes", buf.len());
-
         if buf.is_empty() {
             // no bytes were written to the buffer
-            return Ok(());
+            break cursor as u64 + u64::from(chunk_no) * CHUNK_SIZE;
         }
 
         upload_chunk(ctx, bucket, name, chunk_no, buf.copy_to_bytes(buf.len())).await?;
@@ -294,43 +276,67 @@ where
 
         chunk_no += 1;
         chunk_align = 0; // subsequent chunks are always aligned
-    }
+    };
+
+    let meta = get_meta(ctx, bucket, name).await?;
+
+    let meta = ObjectMeta {
+        size: min_size.max(meta.size),
+        updated: Utc::now(),
+        ..meta
+    };
+
+    set_meta(ctx, bucket, name, &meta, ConflictHandler::CreateNewRevision).await
 }
 
+/// Open a stream to an object.
+///
+/// **The integrity of the data is not checked by this function.**
 #[instrument(skip(ctx))]
-pub async fn open_range<P: Provider>(
-    ctx: &Context<P>,
-    bucket: &str,
-    name: &ObjectName,
-) -> crate::Result<impl Stream<Item = crate::Result<Bytes>>> {
-    let mut streams = vec![];
+#[allow(clippy::manual_async_fn)] // lifetimes don't allow async syntax
+pub fn open_range<'a, P: Provider>(
+    ctx: &'a Context<P>,
+    bucket: &'a str,
+    name: &'a ObjectName,
+    connections: usize,
+) -> impl Future<Output = crate::Result<(ObjectMeta, impl Stream<Item = crate::Result<Bytes>> + 'a)>> + 'a
+{
+    async move {
+        let meta = get_meta(ctx, bucket, name).await?;
 
-    let mut chunk_no = 0;
+        let futures = stream::iter(0..)
+            .map(move |chunk_no| async move {
+                // let ctx = ctx.clone();
 
-    'chunks: loop {
-        debug!("reading chunk no. {}", chunk_no);
+                match ctx
+                    .fs
+                    .file_to_bytes(
+                        &UserScopedPath(format!(
+                            "{}/{bucket}/{}",
+                            ctx.config.user_scoped_root(),
+                            name.chunk_path(chunk_no)
+                        )),
+                        OptionalByteRange::full(),
+                    )
+                    .await
+                {
+                    // Ok(s) => Some(s),
+                    Ok(b) => Some(Ok(b)),
+                    Err(e) => {
+                        warn!("encountered an error while reading chunk: {:?}", e);
+                        None
+                    }
+                }
+            })
+            .buffered(connections);
 
-        match ctx
-            .fs
-            .open(
-                &UserScopedPath(format!(
-                    "{}/{bucket}/{}",
-                    ctx.config.user_scoped_root(),
-                    name.chunk_path(chunk_no)
-                )),
-                OptionalByteRange::full(),
-            )
-            .await
-        {
-            Ok(s) => streams.push(s),
-            Err(e) => {
-                dbg!(e);
-                break 'chunks;
-            }
-        }
+        let stream = futures
+            .take_while(|d| future::ready(d.is_some()))
+            .map(Option::unwrap)
+            // .flatten()
+            // .map_err(Into::into);
+            ;
 
-        chunk_no += 1;
+        Ok((meta, stream))
     }
-
-    Ok(stream::iter(streams).flatten().map_err(Into::into))
 }

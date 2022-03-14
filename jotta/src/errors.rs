@@ -12,4 +12,12 @@ pub enum Error {
     /// Invalid object name.
     #[error("invalid object name: {0}")]
     InvalidObjectName(#[from] InvalidObjectName),
+
+    /// Msgpack encode error.
+    #[error("msgpack encode error: {0}")]
+    MsgpackEncode(#[from] rmp_serde::encode::Error),
+
+    /// MsgPack decode error.
+    #[error("msgpack decode error: {0}")]
+    MsgpackDecode(#[from] rmp_serde::decode::Error),
 }

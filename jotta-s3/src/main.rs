@@ -42,19 +42,19 @@ async fn main() {
     let ctx = Context::new(fs, Config::new("s3-test"));
 
     let bucket = "bucket";
-    let object_name = ObjectName::from_str("photo").unwrap();
+    let object_name = ObjectName::from_str("bbb.mp4").unwrap();
 
-    // let res = create_object(&ctx, bucket, &object_name).await.unwrap();
+    // let res = create_object(&ctx, bucket, &object_name, Some("video/mp4".parse().unwrap())).await.unwrap();
 
     // dbg!(res);
 
     // let offset = 0;
-    // let total_bytes = 10_000_000;
+    // // let total_bytes = 10_000_000;
 
     // // let file = File::open("/dev/urandom").await.unwrap().take(total_bytes);
-    // let mut file = File::open("img.jpg").await.unwrap();
+    // let mut file = File::open("bbb.mp4").await.unwrap();
     // file.seek(SeekFrom::Start(offset)).await.unwrap();
-    // let file = file.take(total_bytes);
+    // // let file = file.take(total_bytes);
     // let file = BufReader::new(file);
     // // let stream = ReaderStream::new(file);
 
@@ -64,68 +64,13 @@ async fn main() {
 
     // dbg!(res);
 
-    // let buckets = list_buckets(&ctx).await.unwrap();
-
-    // for bucket in buckets {
-    //     let objects = list_objects(&ctx, &bucket.name).await.unwrap();
-
-    //     dbg!(objects);
-    // }
-
-    // let mut file = File::open("rand").await.unwrap();
-    // let total = file.metadata().await.unwrap().len();
-    // let digest = md5::Digest(hex!("4fe28312fdea186737995086f4edd905"));
-
-    // let res = fs
-    //     .allocate(&AllocReq {
-    //         path: &PathOnDevice::from_str("Archive/s3-test/rand70").unwrap(),
-    //         bytes: total as _,
-    //         md5: digest,
-    //         conflict_handler: ConflictHandler::RejectConflicts,
-    //         created: None,
-    //         modified: None,
-    //     })
-    //     .await
-    //     .unwrap();
-
-    // dbg!(&res);
-
-    // file.seek(SeekFrom::Start(res.resume_pos)).await.unwrap();
-
-    // let file = BufReader::new(file);
-    // let stream = ReaderStream::new(file);
-
-    // let res = fs
-    //     .put_data(
-    //         &res.upload_url,
-    //         Body::wrap_stream(stream),
-    //         res.resume_pos..=total,
-    //     )
-    //     .await
-    //     .unwrap();
-
-    // dbg!(res);
-
-    // let files = fs
-    //     .file_meta(&AbsolutePath::from_str("jotta/archive/ship.jpg").unwrap())
-    //     .await
-    //     .unwrap();
-
-    // dbg!(files);
-
-    let mut file = File::create("example").await.unwrap();
+    let mut file = File::create("bbb2.mp4").await.unwrap();
 
     let before = Instant::now();
 
-    let mut stream = open_range(&ctx, bucket, &object_name).await.unwrap();
+    let (meta, mut stream) = open_range(&ctx, bucket, &object_name, 20).await.unwrap();
 
-    // let mut stream = fs
-    //     .open(
-    //         &AbsolutePath::from_str("Jotta/Archive/s3-test/rand").unwrap(),
-    //         OptionalByteRange::full(),
-    //     )
-    //     .await
-    //     .unwrap();
+    dbg!(meta);
 
     let mut num_bytes = 0;
 

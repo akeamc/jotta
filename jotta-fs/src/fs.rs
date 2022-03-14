@@ -12,7 +12,7 @@ use once_cell::sync::Lazy;
 
 use reqwest::{
     header::{self, HeaderValue},
-    Body, Client, IntoUrl, Method, RequestBuilder, Url,
+    Body, Client, IntoUrl, Method, RequestBuilder, Response, Url,
 };
 use tracing::{debug, instrument};
 
@@ -164,21 +164,13 @@ impl<P: auth::Provider> Fs<P> {
         read_xml(res).await
     }
 
-    /// Open a stream to a file.
-    ///
-    /// # Errors
-    ///
-    /// - file doesn't exist
-    /// - range is larger than the file itself
-    /// - network errors
-    /// - jottacloud errors
     #[instrument(skip(self, range))]
-    pub async fn open(
+    async fn file_bin(
         &self,
         path: &UserScopedPath,
         range: impl Into<OptionalByteRange>,
-    ) -> crate::Result<impl Stream<Item = crate::Result<Bytes>>> {
-        debug!("opening stream to file");
+    ) -> crate::Result<Response> {
+        debug!("requesting file");
 
         let range: OptionalByteRange = range.into();
 
@@ -196,7 +188,61 @@ impl<P: auth::Provider> Fs<P> {
             return Err(err.into());
         }
 
+        Ok(res)
+    }
+
+    /// Open a stream to a file.
+    ///
+    /// # Errors
+    ///
+    /// - file doesn't exist
+    /// - range is larger than the file itself
+    /// - network errors
+    /// - jottacloud errors
+    pub async fn file_to_stream(
+        &self,
+        path: &UserScopedPath,
+        range: impl Into<OptionalByteRange>,
+    ) -> crate::Result<impl Stream<Item = crate::Result<Bytes>>> {
+        let res = self.file_bin(path, range).await?;
+
         Ok(res.bytes_stream().map_err(Into::into))
+    }
+
+    /// Read a file as a string.
+    ///
+    /// # Errors
+    ///
+    /// - file doesn't exist
+    /// - range is larger than the file itself
+    /// - network errors
+    /// - jottacloud errors
+    pub async fn file_to_string(&self, path: &UserScopedPath) -> crate::Result<String> {
+        let text = self
+            .file_bin(path, OptionalByteRange::full())
+            .await?
+            .text()
+            .await?;
+
+        Ok(text)
+    }
+
+    /// Read a file as bytes.
+    ///
+    /// # Errors
+    ///
+    /// - file doesn't exist
+    /// - range is larger than the file itself
+    /// - network errors
+    /// - jottacloud errors
+    pub async fn file_to_bytes(
+        &self,
+        path: &UserScopedPath,
+        range: impl Into<OptionalByteRange>,
+    ) -> crate::Result<Bytes> {
+        let res = self.file_bin(path, range).await?;
+
+        Ok(res.bytes().await?)
     }
 }
 
