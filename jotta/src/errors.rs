@@ -20,4 +20,8 @@ pub enum Error {
     /// MsgPack decode error.
     #[error("msgpack decode error: {0}")]
     MsgpackDecode(#[from] rmp_serde::decode::Error),
+
+    /// I/O error.
+    #[error("io error")]
+    IoError(#[from] std::io::Error),
 }

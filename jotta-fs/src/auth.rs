@@ -17,7 +17,7 @@ use chrono::{DateTime, Duration, Utc};
 use reqwest::{header, Client};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
-use tracing::{debug, instrument};
+use tracing::{instrument, trace};
 
 /// Authentication error.
 #[derive(Debug, thiserror::Error)]
@@ -67,20 +67,20 @@ impl<P: Provider> TokenStore<P> {
     }
 
     /// Get the cached access token or renew it if it needs to be renewed.
-    #[instrument(skip_all)]
+    #[instrument(level = "trace", skip_all)]
     pub async fn get_access_token(&self, client: &Client) -> crate::Result<AccessToken> {
         {
             let lock = self.access_token.read().unwrap();
 
             if let Some(ref access_token) = *lock {
                 if access_token.exp() >= Utc::now() + Duration::minutes(5) {
-                    debug!("found fresh cached access token");
+                    trace!("found fresh cached access token");
                     return Ok(access_token.clone());
                 }
             }
         }
 
-        debug!("renewing access token");
+        trace!("renewing access token");
 
         let res = client
             .get(format!("https://{}/web/token", P::DOMAIN))

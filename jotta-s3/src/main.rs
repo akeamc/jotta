@@ -1,6 +1,5 @@
 use std::env;
 
-use std::io::SeekFrom;
 use std::str::FromStr;
 
 // use futures_util::StreamExt;
@@ -24,7 +23,7 @@ use jotta::Fs;
 use jotta::{Config, Context};
 
 use tokio::fs::File;
-use tokio::io::{AsyncSeekExt, BufReader};
+use tokio::io::BufReader;
 
 #[tokio::main]
 async fn main() {
@@ -47,6 +46,7 @@ async fn main() {
         &ctx,
         bucket,
         &object_name,
+        // None,
         Some("video/mp4".parse().unwrap()),
     )
     .await
@@ -54,17 +54,14 @@ async fn main() {
 
     dbg!(res);
 
-    let offset = 0;
-    // let total_bytes = 10_000_000;
-
-    // let file = File::open("/dev/urandom").await.unwrap().take(total_bytes);
-    let mut file = File::open("bbb.mp4").await.unwrap();
-    file.seek(SeekFrom::Start(offset)).await.unwrap();
+    // let file = File::open("/dev/urandom").await.unwrap().take(10_000_000);
+    let file = File::open("bbb.mp4").await.unwrap();
+    // file.seek(SeekFrom::Start(offset)).await.unwrap();
     // let file = file.take(total_bytes);
     let file = BufReader::new(file);
     // let stream = ReaderStream::new(file);
 
-    let res = upload_range(&ctx, bucket, &object_name, offset, file, 10)
+    let res = upload_range(&ctx, bucket, &object_name, 0, file, 20)
         .await
         .unwrap();
 

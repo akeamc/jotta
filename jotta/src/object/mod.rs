@@ -11,7 +11,7 @@ use chrono::Utc;
 use futures_util::{
     future,
     stream::{self},
-    Future, Stream, StreamExt,
+    Future, Stream, StreamExt, TryStreamExt,
 };
 
 use jotta_fs::{
@@ -34,8 +34,9 @@ pub mod meta;
 /// an MD5 checksum at allocation time.
 ///
 /// Streaming uploads are forced to backtrack when uploading chunks with sizes that are
-/// not multiples of [`CHUNK_SIZE`], since the MD5 checksums need to be recalculated.
-pub const CHUNK_SIZE: u64 = 1 << 20;
+/// not multiples of [`CHUNK_SIZE`] because the MD5 checksums need to be recalculated
+/// for each chunk.
+pub const CHUNK_SIZE: usize = 1 << 20;
 
 /// A human-readable object name.
 ///
@@ -169,16 +170,18 @@ pub async fn create_object<P: Provider>(
     set_meta(ctx, bucket, name, &meta, ConflictHandler::RejectConflicts).await
 }
 
-#[instrument(skip(ctx, body))]
+#[instrument(skip(ctx, bucket, name, body))]
 async fn upload_chunk<P: Provider>(
     ctx: &Context<P>,
     bucket: &str,
     name: &ObjectName,
     index: u32,
     body: Bytes, // there is no point accepting a stream since a checksum needs to be calculated prior to allocation anyway
-) -> crate::Result<()> {
+) -> crate::Result<u64> {
     let md5 = md5::compute(&body);
     let size = body.len().try_into().unwrap();
+
+    debug!("uploading {} bytes", size);
 
     let req = AllocReq {
         path: &PathOnDevice(format!(
@@ -199,14 +202,80 @@ async fn upload_chunk<P: Provider>(
 
     assert!(matches!(res, UploadRes::Complete(_)));
 
-    Ok(())
+    Ok(size)
+}
+
+async fn get_complete_chunk<P: Provider, R>(
+    ctx: &Context<P>,
+    bucket: &str,
+    name: &ObjectName,
+    mut cursor: usize,
+    chunk_no: u32,
+    file: &mut R,
+) -> crate::Result<Option<Bytes>>
+where
+    R: AsyncBufRead + Unpin,
+{
+    let mut buf = BytesMut::with_capacity(CHUNK_SIZE);
+    let chunk_path = &UserScopedPath(format!(
+        "{}/{bucket}/{}",
+        ctx.config.user_scoped_root(),
+        name.chunk_path(chunk_no)
+    ));
+
+    if cursor != 0 {
+        let b = ctx
+            .fs
+            .file_to_bytes(
+                chunk_path,
+                OptionalByteRange::try_from_bounds(0..(cursor as u64)).unwrap(),
+            )
+            .await?;
+
+        buf.extend_from_slice(&b);
+    }
+
+    buf.resize(CHUNK_SIZE, 0);
+
+    loop {
+        let n = file.read(&mut buf[cursor..]).await?;
+
+        if n == 0 {
+            // The buffer is full or the reader is empty, or both.
+            break;
+        }
+
+        cursor += n;
+    }
+
+    buf.truncate(cursor);
+
+    if buf.is_empty() {
+        // No bytes were written to the buffer, so there's no need to upload anything.
+        return Ok(None);
+    }
+
+    if buf.len() < CHUNK_SIZE {
+        // Either we're writing to the tail of the object, or we're writing in the middle of it.
+        // If the case is the latter, we need to download the tail of this chunk in order not to
+        // accidentally truncate the file.
+
+        let tail = ctx
+            .fs
+            .file_to_bytes(
+                chunk_path,
+                OptionalByteRange::try_from_bounds(cursor as u64..).unwrap(),
+            )
+            .await
+            .unwrap_or_default(); // TODO: actual error handling
+
+        buf.extend_from_slice(&tail);
+    }
+
+    Ok(Some(buf.freeze()))
 }
 
 /// Upload a range of bytes.
-///
-/// # Panics
-///
-/// May panic on conversions between `u64` and `u32` or `usize`, but only if [`CHUNK_SIZE`] is crazy big for some reason.
 #[instrument(skip(ctx, file))]
 pub async fn upload_range<P: Provider, R>(
     ctx: &Context<P>,
@@ -221,84 +290,54 @@ where
 {
     let before = Instant::now();
 
-    let chunks = stream::unfold((file, offset), move |(mut file, pos)| async move {
-        let chunk_align = pos % CHUNK_SIZE;
-        let chunk_no = (pos / CHUNK_SIZE).try_into().unwrap();
+    let chunks = stream::try_unfold((file, offset), move |(mut file, pos)| async move {
+        #[allow(clippy::cast_possible_truncation)] // won't truncate the u64 remainder of an usize
+        let chunk_align = (pos % (CHUNK_SIZE as u64)) as usize;
+        let chunk_no: u32 = (pos / CHUNK_SIZE as u64).try_into().unwrap();
 
-        let mut buf = BytesMut::with_capacity(CHUNK_SIZE.try_into().unwrap());
-
-        if chunk_align != 0 {
-            let chunk_path = &UserScopedPath(format!(
-                "{}/{bucket}/{}",
-                ctx.config.user_scoped_root(),
-                name.chunk_path(chunk_no)
-            ));
-
-            let b = ctx
-                .fs
-                .file_to_bytes(
-                    chunk_path,
-                    OptionalByteRange::try_from_bounds(0..chunk_align).unwrap(),
-                )
-                .await
-                .unwrap(); // TODO: remove panic opportunity
-
-            buf.extend_from_slice(&b);
+        match get_complete_chunk(ctx, bucket, name, chunk_align, chunk_no, &mut file).await? {
+            Some(buf) => Ok(Some((
+                (chunk_no, buf),
+                (file, (CHUNK_SIZE as u64) * u64::from(chunk_no + 1)),
+            ))),
+            None => Ok(None),
         }
-
-        buf.resize(CHUNK_SIZE.try_into().unwrap(), 0);
-
-        let mut cursor = chunk_align.try_into().unwrap();
-
-        loop {
-            let to = buf.len() - 1;
-            let n = file.read(&mut buf[cursor..to]).await.unwrap();
-
-            if n == 0 {
-                break;
-            }
-
-            cursor += n;
-        }
-
-        buf.resize(cursor, 0);
-
-        if buf.is_empty() {
-            // no bytes were written to the buffer
-            return None;
-        }
-
-        // TODO: handle case where there is old data at end of the remote chunk that would be truncated otherwise
-
-        Some((
-            (chunk_no, buf.freeze()),
-            (file, CHUNK_SIZE * u64::from(chunk_no + 1)),
-        ))
     });
 
     let mut futs = Box::pin(
         chunks
-            .map(|(chunk_no, buf)| upload_chunk(ctx.clone(), bucket, name, chunk_no, buf))
-            .buffer_unordered(num_connections),
+            .map(|res| {
+                res.map(|(chunk_no, buf)| upload_chunk(ctx.clone(), bucket, name, chunk_no, buf))
+            })
+            .try_buffer_unordered(num_connections),
     );
 
+    let mut bytes_uploaded = 0;
+
     while let Some(res) = futs.next().await {
-        res?
+        bytes_uploaded += res?;
     }
 
-    debug!("upload took {:.02?}", before.elapsed());
+    let time = before.elapsed();
+    #[allow(clippy::cast_precision_loss)]
+    let bytes_per_second = bytes_uploaded as f64 / time.as_secs_f64();
 
-    todo!("metadata not uploaded");
+    debug!(
+        "uploaded {} bytes in {:.02?} ({} megabits per second)",
+        bytes_uploaded,
+        time,
+        bytes_per_second * 8.0 / 1_000_000.0
+    );
 
-    // let meta = get_meta(ctx, bucket, name).await?;
+    let meta = get_meta(ctx, bucket, name).await?;
 
-    // let meta = ObjectMeta {
-    //     size: min_size.max(meta.size),
-    //     updated: Utc::now(),
-    //     ..meta
-    // };
+    let meta = ObjectMeta {
+        size: meta.size.max(bytes_uploaded + offset),
+        updated: Utc::now(),
+        ..meta
+    };
 
-    // set_meta(ctx, bucket, name, &meta, ConflictHandler::CreateNewRevision).await
+    set_meta(ctx, bucket, name, &meta, ConflictHandler::CreateNewRevision).await
 }
 
 /// Open a stream to an object.
