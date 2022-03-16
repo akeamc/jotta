@@ -20,7 +20,7 @@ use crate::{
     api::{read_json, read_xml, Exception, MaybeUnknown, XmlErrorBody},
     auth::{self, TokenStore},
     files::{AllocReq, AllocRes, CompleteUploadRes, IncompleteUploadRes, UploadRes},
-    jfs::{FileMeta, Index},
+    jfs::{FileDetail, FolderDetail},
     path::UserScopedPath,
 };
 
@@ -51,7 +51,11 @@ impl<P: auth::Provider> Fs<P> {
         Ok(self.client.request(method, url).bearer_auth(access_token))
     }
 
-    async fn jfs_req(&self, method: Method, path: &str) -> crate::Result<RequestBuilder> {
+    async fn jfs_req(
+        &self,
+        method: Method,
+        path: &UserScopedPath,
+    ) -> crate::Result<RequestBuilder> {
         static JFS_BASE: Lazy<Url> =
             Lazy::new(|| Url::parse("https://jfs.jottacloud.com/jfs/").unwrap());
 
@@ -145,7 +149,7 @@ impl<P: auth::Provider> Fs<P> {
     /// - network errors
     /// - jottacloud errors (including auth)
     /// - path doesn't exist
-    pub async fn index(&self, path: &UserScopedPath) -> crate::Result<Index> {
+    pub async fn index(&self, path: &UserScopedPath) -> crate::Result<FolderDetail> {
         let res = self.jfs_req(Method::GET, path).await?.send().await?;
 
         read_xml(res).await
@@ -158,8 +162,26 @@ impl<P: auth::Provider> Fs<P> {
     /// - network errors
     /// - jottacloud errors
     /// - no such file
-    pub async fn file_meta(&self, path: &UserScopedPath) -> crate::Result<FileMeta> {
+    pub async fn file_detail(&self, path: &UserScopedPath) -> crate::Result<FileDetail> {
         let res = self.jfs_req(Method::GET, path).await?.send().await?;
+
+        read_xml(res).await
+    }
+
+    /// Delete a folder. It must be a folder. It fails if you try to
+    /// delete a single file.
+    ///
+    /// # Errors
+    ///
+    /// - your usual Jottacloud errors
+    /// - trying to delete a file instead of a folder
+    pub async fn delete_folder(&self, path: &UserScopedPath) -> crate::Result<FolderDetail> {
+        let res = self
+            .jfs_req(Method::POST, path)
+            .await?
+            .query(&[("dlDir", "true")])
+            .send()
+            .await?;
 
         read_xml(res).await
     }
@@ -168,15 +190,16 @@ impl<P: auth::Provider> Fs<P> {
     async fn file_bin(
         &self,
         path: &UserScopedPath,
-        range: impl Into<OptionalByteRange>,
+        range: impl Into<ByteRange>,
     ) -> crate::Result<Response> {
         debug!("requesting file");
 
-        let range: OptionalByteRange = range.into();
+        let range: ByteRange = range.into();
 
         let res = self
-            .jfs_req(Method::GET, &format!("{}?mode=bin", path))
+            .jfs_req(Method::GET, path)
             .await?
+            .query(&[("mode", "bin")])
             // status will be `206 Partial Content` even if the whole body is returned
             .header(header::RANGE, range)
             .send()
@@ -202,7 +225,7 @@ impl<P: auth::Provider> Fs<P> {
     pub async fn file_to_stream(
         &self,
         path: &UserScopedPath,
-        range: impl Into<OptionalByteRange>,
+        range: impl Into<ByteRange>,
     ) -> crate::Result<impl Stream<Item = crate::Result<Bytes>>> {
         let res = self.file_bin(path, range).await?;
 
@@ -218,11 +241,7 @@ impl<P: auth::Provider> Fs<P> {
     /// - network errors
     /// - jottacloud errors
     pub async fn file_to_string(&self, path: &UserScopedPath) -> crate::Result<String> {
-        let text = self
-            .file_bin(path, OptionalByteRange::full())
-            .await?
-            .text()
-            .await?;
+        let text = self.file_bin(path, ByteRange::full()).await?.text().await?;
 
         Ok(text)
     }
@@ -238,7 +257,7 @@ impl<P: auth::Provider> Fs<P> {
     pub async fn file_to_bytes(
         &self,
         path: &UserScopedPath,
-        range: impl Into<OptionalByteRange>,
+        range: impl Into<ByteRange>,
     ) -> crate::Result<Bytes> {
         let res = self.file_bin(path, range).await?;
 
@@ -249,13 +268,13 @@ impl<P: auth::Provider> Fs<P> {
 /// Simplified abstraction of the `Range` header value in the sense that
 /// only one range is allowed.
 #[derive(Debug)]
-pub struct OptionalByteRange {
+pub struct ByteRange {
     start: Option<u64>,
     end: Option<u64>,
 }
 
 #[allow(clippy::len_without_is_empty)]
-impl OptionalByteRange {
+impl ByteRange {
     /// Total length of the range.
     #[must_use]
     pub fn len(&self) -> Option<u64> {
@@ -277,9 +296,9 @@ impl OptionalByteRange {
     /// Construct a full range.
     ///
     /// ```
-    /// use jotta_fs::OptionalByteRange;
+    /// use jotta_fs::ByteRange;
     ///
-    /// assert_eq!(OptionalByteRange::full().to_string(), "bytes=0-");
+    /// assert_eq!(ByteRange::full().to_string(), "bytes=0-");
     /// ```
     #[must_use]
     pub fn full() -> Self {
@@ -289,15 +308,15 @@ impl OptionalByteRange {
         }
     }
 
-    /// Convert a standard [`std::ops::Range`] to [`OptionalByteRange`]:
+    /// Convert a standard [`std::ops::Range`] to [`ByteRange`]:
     ///
     /// ```
-    /// use jotta_fs::OptionalByteRange;
+    /// use jotta_fs::ByteRange;
     ///
-    /// assert_eq!(OptionalByteRange::try_from_bounds(..5).unwrap().to_string(), "bytes=0-4");
-    /// assert_eq!(OptionalByteRange::try_from_bounds(..).unwrap().to_string(), "bytes=0-");
-    /// assert_eq!(OptionalByteRange::try_from_bounds(3..=4).unwrap().to_string(), "bytes=3-4");
-    /// assert!(OptionalByteRange::try_from_bounds(10..7).is_err()); // reversed
+    /// assert_eq!(ByteRange::try_from_bounds(..5).unwrap().to_string(), "bytes=0-4");
+    /// assert_eq!(ByteRange::try_from_bounds(..).unwrap().to_string(), "bytes=0-");
+    /// assert_eq!(ByteRange::try_from_bounds(3..=4).unwrap().to_string(), "bytes=3-4");
+    /// assert!(ByteRange::try_from_bounds(10..7).is_err()); // reversed
     /// ```
     ///
     /// # Errors
@@ -334,7 +353,7 @@ pub enum InvalidRange {
     Reversed,
 }
 
-impl Display for OptionalByteRange {
+impl Display for ByteRange {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "bytes={}-", self.start())?;
 
@@ -346,8 +365,8 @@ impl Display for OptionalByteRange {
     }
 }
 
-impl From<OptionalByteRange> for HeaderValue {
-    fn from(value: OptionalByteRange) -> Self {
+impl From<ByteRange> for HeaderValue {
+    fn from(value: ByteRange) -> Self {
         HeaderValue::from_str(&value.to_string()).unwrap()
     }
 }

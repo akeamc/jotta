@@ -25,7 +25,9 @@ pub async fn list_buckets<P: Provider + Debug>(ctx: &Context<P>) -> crate::Resul
         .await?
         .folders
         .inner;
+
     debug!("listed {} folders", folders.len());
+
     let buckets = folders
         .into_iter()
         .map(|f| Bucket { name: f.name })

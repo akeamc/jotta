@@ -18,11 +18,11 @@ use jotta_fs::{
     auth::Provider,
     files::{AllocReq, ConflictHandler, UploadRes},
     path::{PathOnDevice, UserScopedPath},
-    OptionalByteRange,
+    ByteRange,
 };
 use mime::Mime;
 use tokio::io::{AsyncBufRead, AsyncReadExt};
-use tracing::{debug, error, instrument, warn};
+use tracing::{debug, error, instrument, trace, warn};
 
 use self::meta::{set_meta, ObjectMeta};
 
@@ -170,7 +170,7 @@ pub async fn create_object<P: Provider>(
     set_meta(ctx, bucket, name, &meta, ConflictHandler::RejectConflicts).await
 }
 
-#[instrument(skip(ctx, bucket, name, body))]
+#[instrument(level = "trace", skip(ctx, bucket, name, body))]
 async fn upload_chunk<P: Provider>(
     ctx: &Context<P>,
     bucket: &str,
@@ -181,7 +181,7 @@ async fn upload_chunk<P: Provider>(
     let md5 = md5::compute(&body);
     let size = body.len().try_into().unwrap();
 
-    debug!("uploading {} bytes", size);
+    trace!("uploading {} bytes", size);
 
     let req = AllocReq {
         path: &PathOnDevice(format!(
@@ -228,7 +228,7 @@ where
             .fs
             .file_to_bytes(
                 chunk_path,
-                OptionalByteRange::try_from_bounds(0..(cursor as u64)).unwrap(),
+                ByteRange::try_from_bounds(0..(cursor as u64)).unwrap(),
             )
             .await?;
 
@@ -264,7 +264,7 @@ where
             .fs
             .file_to_bytes(
                 chunk_path,
-                OptionalByteRange::try_from_bounds(cursor as u64..).unwrap(),
+                ByteRange::try_from_bounds(cursor as u64..).unwrap(),
             )
             .await
             .unwrap_or_default(); // TODO: actual error handling
@@ -275,7 +275,8 @@ where
     Ok(Some(buf.freeze()))
 }
 
-/// Upload a range of bytes.
+/// Upload a range of bytes. The remote object will
+/// be overwritten but not truncated.
 #[instrument(skip(ctx, file))]
 pub async fn upload_range<P: Provider, R>(
     ctx: &Context<P>,
@@ -306,9 +307,7 @@ where
 
     let mut futs = Box::pin(
         chunks
-            .map(|res| {
-                res.map(|(chunk_no, buf)| upload_chunk(ctx.clone(), bucket, name, chunk_no, buf))
-            })
+            .map(|res| res.map(|(chunk_no, buf)| upload_chunk(ctx, bucket, name, chunk_no, buf)))
             .try_buffer_unordered(num_connections),
     );
 
@@ -367,7 +366,7 @@ pub fn open_range<'a, P: Provider>(
                             ctx.config.user_scoped_root(),
                             name.chunk_path(chunk_no)
                         )),
-                        OptionalByteRange::full(),
+                        ByteRange::full(),
                     )
                     .await
                 {
@@ -387,4 +386,23 @@ pub fn open_range<'a, P: Provider>(
 
         Ok((meta, stream))
     }
+}
+
+/// Delete an object.
+#[instrument(skip(ctx))]
+pub async fn delete_object<P: Provider>(
+    ctx: &Context<P>,
+    bucket: &str,
+    name: &ObjectName,
+) -> crate::Result<()> {
+    let _res = ctx
+        .fs
+        .delete_folder(&UserScopedPath(format!(
+            "{}/{bucket}/{}",
+            ctx.config.user_scoped_root(),
+            name.to_hex()
+        )))
+        .await?;
+
+    Ok(())
 }

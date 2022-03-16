@@ -322,9 +322,12 @@ pub struct IndexMeta {
 }
 
 /// Data returned when indexing (like `ls`, in a sense).
+///
+/// The `FolderDetail` name is a bit misleading since it can also
+/// be returned when indexing a mount point.
 #[serde_as]
 #[derive(Debug, Deserialize)]
-pub struct Index {
+pub struct FolderDetail {
     /// Name of the indexed folder.
     pub name: String,
 
@@ -340,7 +343,7 @@ pub struct Index {
     pub files: Files,
 
     /// Metadata, such as paging info.
-    pub metadata: IndexMeta,
+    pub metadata: Option<IndexMeta>,
 }
 
 /// Revisions wrapper (for XML compatability).
@@ -351,10 +354,10 @@ pub struct Revisions {
     pub inner: Vec<Revision>,
 }
 
-/// File metadata.
+/// Detailed file information.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all(deserialize = "camelCase"))]
-pub struct FileMeta {
+pub struct FileDetail {
     /// Filename.
     pub name: String,
     /// Id of the file.
@@ -375,7 +378,7 @@ pub struct FileMeta {
     pub revisions: Revisions,
 }
 
-impl FileMeta {
+impl FileDetail {
     /// Check if `latest_revision` is `None` (otherwise it probably is `Incomplete` or
     /// `Corrupted`) and if `current_revision` has a state of `Completed`.
     #[must_use]

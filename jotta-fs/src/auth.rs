@@ -19,13 +19,7 @@ use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use tracing::{instrument, trace};
 
-/// Authentication error.
-#[derive(Debug, thiserror::Error)]
-pub enum Error {
-    /// Token was not successfully renewed.
-    #[error("token renewal failed")]
-    TokenRenewalFailed,
-}
+use crate::Error;
 
 /// Generic auth provider.
 pub trait Provider {

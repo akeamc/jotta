@@ -2,28 +2,14 @@ use std::env;
 
 use std::str::FromStr;
 
-// use futures_util::StreamExt;
-// use hex_literal::hex;
-// use jotta_fs::{
-//     auth::{provider, TokenStore},
-//     files::{AllocReq, ConflictHandler},
-//     path::{AbsolutePath, PathOnDevice},
-//     Fs, OptionalByteRange,
-// };
-// use reqwest::Body;
-// use tokio::{
-//     fs::File,
-//     io::{AsyncSeekExt, AsyncWriteExt, BufReader},
-// };
-// use tokio_util::io::ReaderStream;
 use jotta::auth::{provider, TokenStore};
 
-use jotta::object::{create_object, upload_range, ObjectName};
+use jotta::object::{create_object, delete_object, upload_range, ObjectName};
 use jotta::Fs;
 use jotta::{Config, Context};
 
 use tokio::fs::File;
-use tokio::io::BufReader;
+use tokio::io::{AsyncReadExt, BufReader};
 
 #[tokio::main]
 async fn main() {
@@ -40,22 +26,23 @@ async fn main() {
     let ctx = Context::new(fs, Config::new("s3-test"));
 
     let bucket = "bucket";
-    let object_name = ObjectName::from_str("bbb.mp4").unwrap();
+    let object_name = ObjectName::from_str("rand").unwrap();
+
+    delete_object(&ctx, bucket, &object_name).await.unwrap();
 
     let res = create_object(
         &ctx,
         bucket,
         &object_name,
-        // None,
-        Some("video/mp4".parse().unwrap()),
+        None,
+        // Some("video/mp4".parse().unwrap()),
     )
     .await
     .unwrap();
 
     dbg!(res);
 
-    // let file = File::open("/dev/urandom").await.unwrap().take(10_000_000);
-    let file = File::open("bbb.mp4").await.unwrap();
+    let file = File::open("/dev/urandom").await.unwrap().take(10_000_000);
     // file.seek(SeekFrom::Start(offset)).await.unwrap();
     // let file = file.take(total_bytes);
     let file = BufReader::new(file);

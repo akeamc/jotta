@@ -4,7 +4,7 @@ use jotta_fs::{
     auth::Provider,
     files::{AllocReq, ConflictHandler, UploadRes},
     path::{PathOnDevice, UserScopedPath},
-    OptionalByteRange,
+    ByteRange,
 };
 use mime::Mime;
 use serde::{Deserialize, Serialize};
@@ -60,9 +60,9 @@ pub(crate) async fn set_meta<P: Provider>(
 
     let upload_url = ctx.fs.allocate(&req).await?.upload_url;
 
-    let res = ctx.fs.upload_range(&upload_url, body, 0..=bytes).await?;
+    let resp = ctx.fs.upload_range(&upload_url, body, 0..=bytes).await?;
 
-    assert!(matches!(res, UploadRes::Complete(_)));
+    assert!(matches!(resp, UploadRes::Complete(_))); // TODO: remove panic
 
     Ok(())
 }
@@ -81,7 +81,7 @@ pub(crate) async fn get_meta<P: Provider>(
                 ctx.config.user_scoped_root(),
                 name.to_hex()
             )),
-            OptionalByteRange::full(),
+            ByteRange::full(),
         )
         .await?;
 

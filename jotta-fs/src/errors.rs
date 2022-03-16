@@ -1,7 +1,7 @@
 //! Nobody is perfect.
 use thiserror::Error;
 
-use crate::api::{JsonErrorBody, XmlErrorBody};
+use crate::api::{Exception, JsonErrorBody, MaybeUnknown, XmlErrorBody};
 
 /// Error used by the entire Jotta crate.
 #[derive(Debug, Error)]
@@ -14,7 +14,8 @@ pub enum Error {
     #[error("invalid url")]
     UrlError(#[from] url::ParseError),
 
-    /// Upstream Jottacloud error. Might be due to a client error.
+    /// Upstream (unrecongnized) Jottacloud error. Might be due to
+    /// a user error.
     #[error("jotta error")]
     JottaError(ApiResError),
 
@@ -22,9 +23,33 @@ pub enum Error {
     #[error("xml error: {0}")]
     XmlError(#[from] serde_xml_rs::Error),
 
-    /// Authentication error.
-    #[error("auth error: {0}")]
-    AuthError(#[from] crate::auth::Error),
+    /// File conflict.
+    #[error("file or folder already exists")]
+    AlreadyExists,
+
+    /// Bad credentials.
+    #[error("bad credentials")]
+    BadCredentials,
+
+    /// Not found.
+    #[error("file or folder does not exist")]
+    NoSuchFileOrFolder,
+
+    /// Incomplete upload.
+    #[error("incomplete upload; maybe too short body?")]
+    IncompleteUpload,
+
+    /// Invalid argument.
+    #[error("invalid argument")]
+    InvalidArgument,
+
+    /// Corrupt upload, probably due to a checksum mismatch.
+    #[error("corrupt upload")]
+    CorruptUpload,
+
+    /// Token was not successfully renewed.
+    #[error("token renewal failed")]
+    TokenRenewalFailed,
 }
 
 /// All possible errors returned by the upstream Jottacloud API.
@@ -37,17 +62,35 @@ pub enum ApiResError {
 }
 
 impl From<JsonErrorBody> for Error {
-    fn from(e: JsonErrorBody) -> Self {
-        Self::JottaError(ApiResError::Json(e))
+    fn from(err: JsonErrorBody) -> Self {
+        match err.error_id {
+            Some(MaybeUnknown::Known(exception)) => Error::from(exception),
+            _ => Self::JottaError(ApiResError::Json(err)),
+        }
     }
 }
 
 impl From<XmlErrorBody> for Error {
-    fn from(e: XmlErrorBody) -> Self {
-        Self::JottaError(ApiResError::Xml(e))
+    fn from(err: XmlErrorBody) -> Self {
+        if let Some(exception) = err.exception_opt() {
+            Error::from(exception)
+        } else {
+            Self::JottaError(ApiResError::Xml(err))
+        }
     }
 }
 
-// impl From<auth::Error> for Error {
-
-// }
+impl From<Exception> for Error {
+    fn from(exception: Exception) -> Self {
+        match exception {
+            Exception::UniqueFileException => Error::AlreadyExists,
+            Exception::BadCredentialsException => Error::BadCredentials,
+            Exception::CorruptUploadOpenApiException => Error::CorruptUpload,
+            Exception::NoSuchFileException | Exception::NoSuchPathException => {
+                Error::NoSuchFileOrFolder
+            }
+            Exception::InvalidArgumentException => Error::InvalidArgument,
+            Exception::IncompleteUploadOpenApiException => Error::IncompleteUpload,
+        }
+    }
+}
