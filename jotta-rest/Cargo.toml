@@ -1,0 +1,19 @@
+[package]
+name = "jotta-rest"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+actix-web = "4.0.1"
+async-stream = "0.3.3"
+dotenv = "0.15.0"
+futures-util = "0.3.21"
+jotta = { version = "0.1.5", path = "../jotta" }
+jotta-fs = { version = "0.1.2", path = "../jotta-fs" }
+serde = { version = "1.0.136", features = ["derive"] }
+thiserror = "1.0.30"
+tracing-subscriber = "0.3.9"
+
+[features]

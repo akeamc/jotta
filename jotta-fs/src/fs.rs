@@ -1,8 +1,8 @@
 //! A higher-level but still pretty low-level Jottacloud client with
 //! basic filesystem capabilities.
 use std::{
-    fmt::{Debug, Display},
-    ops::{RangeBounds, RangeInclusive},
+    fmt::{Debug},
+    ops::{RangeInclusive},
 };
 
 use bytes::Bytes;
@@ -11,7 +11,7 @@ use futures::{Stream, TryStreamExt};
 use once_cell::sync::Lazy;
 
 use reqwest::{
-    header::{self, HeaderValue},
+    header::{self},
     Body, Client, IntoUrl, Method, RequestBuilder, Response, Url,
 };
 use tracing::{debug, instrument};
@@ -22,6 +22,7 @@ use crate::{
     files::{AllocReq, AllocRes, CompleteUploadRes, IncompleteUploadRes, UploadRes},
     jfs::{FileDetail, FolderDetail},
     path::UserScopedPath,
+    range::ByteRange,
 };
 
 /// A Jottacloud "filesystem".
@@ -127,8 +128,6 @@ impl Fs {
             .send()
             .await?;
 
-        // let pool = res.headers().get("pool");
-
         let res = match read_json::<CompleteUploadRes>(res).await? {
             Ok(complete) => UploadRes::Complete(complete),
             Err(err) => match err.error_id {
@@ -200,7 +199,6 @@ impl Fs {
             .jfs_req(Method::GET, path)
             .await?
             .query(&[("mode", "bin")])
-            // status will be `206 Partial Content` even if the whole body is returned
             .header(header::RANGE, range)
             .send()
             .await?;
@@ -262,111 +260,5 @@ impl Fs {
         let res = self.file_bin(path, range).await?;
 
         Ok(res.bytes().await?)
-    }
-}
-
-/// Simplified abstraction of the `Range` header value in the sense that
-/// only one range is allowed.
-#[derive(Debug)]
-pub struct ByteRange {
-    start: Option<u64>,
-    end: Option<u64>,
-}
-
-#[allow(clippy::len_without_is_empty)]
-impl ByteRange {
-    /// Total length of the range.
-    #[must_use]
-    pub fn len(&self) -> Option<u64> {
-        self.end.map(|end| end + 1 - self.start.unwrap_or(0))
-    }
-
-    /// Start of the range.
-    #[must_use]
-    pub fn start(&self) -> u64 {
-        self.start.unwrap_or(0)
-    }
-
-    /// End of the range.
-    #[must_use]
-    pub fn end(&self) -> Option<u64> {
-        self.end
-    }
-
-    /// Construct a full range.
-    ///
-    /// ```
-    /// use jotta_fs::ByteRange;
-    ///
-    /// assert_eq!(ByteRange::full().to_string(), "bytes=0-");
-    /// ```
-    #[must_use]
-    pub fn full() -> Self {
-        Self {
-            start: None,
-            end: None,
-        }
-    }
-
-    /// Convert a standard [`std::ops::Range`] to [`ByteRange`]:
-    ///
-    /// ```
-    /// use jotta_fs::ByteRange;
-    ///
-    /// assert_eq!(ByteRange::try_from_bounds(..5).unwrap().to_string(), "bytes=0-4");
-    /// assert_eq!(ByteRange::try_from_bounds(..).unwrap().to_string(), "bytes=0-");
-    /// assert_eq!(ByteRange::try_from_bounds(3..=4).unwrap().to_string(), "bytes=3-4");
-    /// assert!(ByteRange::try_from_bounds(10..7).is_err()); // reversed
-    /// ```
-    ///
-    /// # Errors
-    ///
-    /// This function returns an `Error` if the range is reversed, i.e. `start` comes after `end`.
-    pub fn try_from_bounds(bounds: impl RangeBounds<u64>) -> Result<Self, InvalidRange> {
-        use std::ops::Bound::{Excluded, Included, Unbounded};
-
-        let start = match bounds.start_bound() {
-            Included(i) => Some(*i),
-            Excluded(e) => Some(e + 1),
-            Unbounded => None,
-        };
-
-        let end = match bounds.end_bound() {
-            Included(i) => Some(*i),
-            Excluded(e) => Some(e - 1),
-            Unbounded => None,
-        };
-
-        if start.unwrap_or(0) > end.unwrap_or(u64::MAX) {
-            return Err(InvalidRange::Reversed);
-        }
-
-        Ok(Self { start, end })
-    }
-}
-
-/// Invalid range error.
-#[derive(Debug, thiserror::Error)]
-pub enum InvalidRange {
-    /// Range is reversed.
-    #[error("range is wrong direction")]
-    Reversed,
-}
-
-impl Display for ByteRange {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "bytes={}-", self.start())?;
-
-        if let Some(end) = self.end() {
-            write!(f, "{}", end)?;
-        }
-
-        Ok(())
-    }
-}
-
-impl From<ByteRange> for HeaderValue {
-    fn from(value: ByteRange) -> Self {
-        HeaderValue::from_str(&value.to_string()).unwrap()
     }
 }

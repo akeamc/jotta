@@ -13,6 +13,7 @@ pub mod files;
 mod fs;
 pub mod jfs;
 pub mod path;
+pub mod range;
 pub(crate) mod serde;
 
 pub(crate) type Result<T> = core::result::Result<T, errors::Error>;

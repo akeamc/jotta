@@ -3,7 +3,7 @@ use chrono::{DateTime, Utc};
 use jotta_fs::{
     files::{AllocReq, ConflictHandler, UploadRes},
     path::{PathOnDevice, UserScopedPath},
-    ByteRange,
+    range::ByteRange,
 };
 use mime::Mime;
 use serde::{Deserialize, Serialize};
@@ -34,7 +34,7 @@ pub struct ObjectMeta {
 
 pub(crate) async fn set_meta(
     ctx: &Context,
-    bucket: &BucketName<'_>,
+    bucket: &BucketName,
     name: &ObjectName,
     meta: &ObjectMeta,
     conflict_handler: ConflictHandler,
@@ -67,7 +67,7 @@ pub(crate) async fn set_meta(
 #[instrument(skip(ctx))]
 pub(crate) async fn get_meta(
     ctx: &Context,
-    bucket: &BucketName<'_>,
+    bucket: &BucketName,
     name: &ObjectName,
 ) -> crate::Result<ObjectMeta> {
     let msg = ctx

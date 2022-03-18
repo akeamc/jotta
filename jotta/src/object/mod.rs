@@ -3,11 +3,12 @@
 //!
 //! - A `meta` file with metadata about the object.
 //! - One or more binary data chunks.
-use std::{fmt::Debug, str::FromStr, string::FromUtf8Error, time::Instant};
+use std::{fmt::Debug, iter, str::FromStr, string::FromUtf8Error, sync::Arc, time::Instant};
 
 use crate::{bucket::BucketName, object::meta::get_meta, Context};
 use bytes::{Bytes, BytesMut};
 use chrono::Utc;
+use derive_more::{AsRef, Deref, DerefMut, Display};
 use futures_util::{
     future,
     stream::{self},
@@ -17,7 +18,7 @@ use futures_util::{
 use jotta_fs::{
     files::{AllocReq, ConflictHandler, UploadRes},
     path::{PathOnDevice, UserScopedPath},
-    ByteRange,
+    range::ByteRange,
 };
 use mime::Mime;
 use serde::{Deserialize, Serialize};
@@ -48,7 +49,20 @@ pub const CHUNK_SIZE: usize = 1 << 20;
 /// assert!(ObjectName::from_str("hello\nworld").is_err());
 /// assert!(ObjectName::from_str("bye\r\nlword").is_err());
 /// ```
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Serialize,
+    Deserialize,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Deref,
+    DerefMut,
+    AsRef,
+    Display,
+)]
 #[allow(clippy::module_name_repetitions)]
 pub struct ObjectName(String);
 
@@ -130,10 +144,7 @@ pub enum InvalidObjectName {
 ///
 /// Returns an error if there is no bucket with the specified name.
 #[instrument(skip(ctx))]
-pub async fn list_objects(
-    ctx: &Context,
-    bucket: &BucketName<'_>,
-) -> crate::Result<Vec<ObjectName>> {
+pub async fn list_objects(ctx: &Context, bucket: &BucketName) -> crate::Result<Vec<ObjectName>> {
     let folders = ctx
         .fs
         .index(&UserScopedPath(format!(
@@ -154,7 +165,7 @@ pub async fn list_objects(
 #[instrument(skip(ctx))]
 pub async fn create_object(
     ctx: &Context,
-    bucket: &BucketName<'_>,
+    bucket: &BucketName,
     name: &ObjectName,
     content_type: Option<Mime>,
 ) -> crate::Result<()> {
@@ -173,7 +184,7 @@ pub async fn create_object(
 #[instrument(level = "trace", skip(ctx, bucket, name, body))]
 async fn upload_chunk(
     ctx: &Context,
-    bucket: &BucketName<'_>,
+    bucket: &BucketName,
     name: &ObjectName,
     index: u32,
     body: Bytes, // there is no point accepting a stream since a checksum needs to be calculated prior to allocation anyway
@@ -207,7 +218,7 @@ async fn upload_chunk(
 
 async fn get_complete_chunk<R: AsyncBufRead + Unpin>(
     ctx: &Context,
-    bucket: &BucketName<'_>,
+    bucket: &BucketName,
     name: &ObjectName,
     mut cursor: usize,
     chunk_no: u32,
@@ -277,7 +288,7 @@ async fn get_complete_chunk<R: AsyncBufRead + Unpin>(
 #[instrument(skip(ctx, file))]
 pub async fn upload_range<R: AsyncBufRead + Unpin>(
     ctx: &Context,
-    bucket: &BucketName<'_>,
+    bucket: &BucketName,
     name: &ObjectName,
     offset: u64,
     file: R,
@@ -333,42 +344,72 @@ pub async fn upload_range<R: AsyncBufRead + Unpin>(
     set_meta(ctx, bucket, name, &meta, ConflictHandler::CreateNewRevision).await
 }
 
+fn aligned_chunked_byte_range(range: ByteRange) -> impl Iterator<Item = (u32, ByteRange)> {
+    let mut pos = range.start();
+
+    iter::from_fn(move || {
+        #[allow(clippy::cast_possible_truncation)]
+        let chunk_no = (pos / (CHUNK_SIZE as u64)) as u32;
+        let chunk_start = pos % (CHUNK_SIZE as u64);
+
+        let chunk_size = (range.end().unwrap_or(u64::MAX) - pos).min(CHUNK_SIZE as _);
+
+        if chunk_size == 0 {
+            return None;
+        }
+
+        let chunk_end = chunk_size - 1;
+
+        let chunk = ByteRange::try_new(Some(chunk_start), Some(chunk_end)).unwrap();
+
+        pos += chunk.len().unwrap();
+
+        Some((chunk_no, chunk))
+    })
+}
+
 /// Open a stream to an object.
 ///
 /// **The integrity of the data is not checked by this function.**
 #[instrument(skip(ctx))]
 #[allow(clippy::manual_async_fn)] // lifetimes don't allow async syntax
 pub fn open_range<'a>(
-    ctx: &'a Context,
-    bucket: &'a BucketName<'a>,
-    name: &'a ObjectName,
+    ctx: Arc<Context>,
+    bucket: BucketName,
+    name: ObjectName,
+    range: ByteRange,
     num_connections: usize,
-) -> impl Future<Output = crate::Result<(ObjectMeta, impl Stream<Item = crate::Result<Bytes>> + 'a)>> + 'a
+) -> impl Future<Output = crate::Result<(ObjectMeta, impl Stream<Item = crate::Result<Bytes>> + 'a)>>
 {
     async move {
-        let meta = get_meta(ctx, bucket, name).await?;
+        let meta = get_meta(&ctx, &bucket, &name).await?;
 
-        let futures = stream::iter(0..)
-            .map(move |chunk_no| async move {
-                // let ctx = ctx.clone();
+        let futures = stream::iter(aligned_chunked_byte_range(range))
+            .map(move |(chunk_no, range)| {
+                let ctx = ctx.clone();
+                let bucket = bucket.clone();
+                let name = name.clone();
 
-                match ctx
-                    .fs
-                    .file_to_bytes(
-                        &UserScopedPath(format!(
-                            "{}/{bucket}/{}",
-                            ctx.user_scoped_root(),
-                            name.chunk_path(chunk_no)
-                        )),
-                        ByteRange::full(),
-                    )
-                    .await
-                {
-                    // Ok(s) => Some(s),
-                    Ok(b) => Some(Ok(b)),
-                    Err(e) => {
-                        warn!("encountered an error while reading chunk: {:?}", e);
-                        None
+                async move {
+                    match ctx
+                        .fs
+                        .file_to_bytes(
+                            &UserScopedPath(format!(
+                                "{}/{}/{}",
+                                ctx.user_scoped_root(),
+                                &bucket,
+                                name.clone().chunk_path(chunk_no)
+                            )),
+                            range,
+                        )
+                        .await
+                    {
+                        // Ok(s) => Some(s),
+                        Ok(b) => Some(Ok(b)),
+                        Err(e) => {
+                            warn!("encountered an error while reading chunk: {:?}", e);
+                            None
+                        }
                     }
                 }
             })
@@ -386,7 +427,7 @@ pub fn open_range<'a>(
 #[instrument(skip(ctx))]
 pub async fn delete_object(
     ctx: &Context,
-    bucket: &BucketName<'_>,
+    bucket: &BucketName,
     name: &ObjectName,
 ) -> crate::Result<()> {
     let _res = ctx
@@ -399,4 +440,62 @@ pub async fn delete_object(
         .await?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use jotta_fs::range::ByteRange;
+
+    use crate::object::{aligned_chunked_byte_range, CHUNK_SIZE};
+
+    #[test]
+    fn create_aligned_chunks() {
+        let mut iter = aligned_chunked_byte_range(ByteRange::full());
+
+        assert_eq!(
+            iter.next().unwrap(),
+            (
+                0,
+                ByteRange::try_new(Some(0), Some(CHUNK_SIZE as u64 - 1)).unwrap()
+            )
+        );
+        assert_eq!(
+            iter.next().unwrap(),
+            (
+                1,
+                ByteRange::try_new(Some(0), Some(CHUNK_SIZE as u64 - 1)).unwrap()
+            )
+        );
+        assert_eq!(
+            iter.next().unwrap(),
+            (
+                2,
+                ByteRange::try_new(Some(0), Some(CHUNK_SIZE as u64 - 1)).unwrap()
+            )
+        );
+
+        assert_eq!(
+            aligned_chunked_byte_range(ByteRange::try_new(Some(40), Some(2_500_000)).unwrap())
+                .collect::<Vec<_>>(),
+            vec![
+                (0, ByteRange::try_new(Some(40), Some(1_048_575)).unwrap()),
+                (1, ByteRange::try_new(Some(0), Some(1_048_575)).unwrap()),
+                (2, ByteRange::try_new(Some(0), Some(402_847)).unwrap())
+            ]
+        );
+
+        assert_eq!(
+            aligned_chunked_byte_range(
+                ByteRange::try_new(Some(69_420_000), Some(71_000_000)).unwrap()
+            )
+            .collect::<Vec<_>>(),
+            vec![
+                (
+                    66,
+                    ByteRange::try_new(Some(213_984), Some(1_048_575)).unwrap()
+                ),
+                (67, ByteRange::try_new(Some(0), Some(745_407)).unwrap())
+            ]
+        );
+    }
 }

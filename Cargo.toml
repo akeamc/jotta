@@ -1,5 +1,5 @@
 [workspace]
-members = ["jotta", "jotta-fs", "jotta-s3"]
+members = ["jotta", "jotta-fs", "jotta-rest", "jotta-s3"]
 
 [patch.crates-io]
 jotta-fs = { path = "jotta-fs" }
