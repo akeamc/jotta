@@ -2,8 +2,9 @@ use std::env;
 
 use std::str::FromStr;
 
-use jotta::auth::{provider, TokenStore};
+use jotta::auth::{provider, DefaultTokenStore};
 
+use jotta::bucket::BucketName;
 use jotta::object::{create_object, delete_object, upload_range, ObjectName};
 use jotta::Fs;
 use jotta::{Config, Context};
@@ -20,19 +21,19 @@ async fn main() {
     let refresh_token = env::var("REFRESH_TOKEN").expect("REFRESH_TOKEN not set");
     let session_id = env::var("SESSION_ID").expect("SESSION_ID not set");
 
-    let store = TokenStore::<provider::Jottacloud>::new(refresh_token, session_id);
+    let store = DefaultTokenStore::<provider::Jottacloud>::new(refresh_token, session_id);
 
     let fs = Fs::new(store);
     let ctx = Context::new(fs, Config::new("s3-test"));
 
-    let bucket = "bucket";
+    let bucket = BucketName::from_str("bucket").unwrap();
     let object_name = ObjectName::from_str("rand").unwrap();
 
-    delete_object(&ctx, bucket, &object_name).await.unwrap();
+    delete_object(&ctx, &bucket, &object_name).await.unwrap();
 
     let res = create_object(
         &ctx,
-        bucket,
+        &bucket,
         &object_name,
         None,
         // Some("video/mp4".parse().unwrap()),
@@ -48,7 +49,7 @@ async fn main() {
     let file = BufReader::new(file);
     // let stream = ReaderStream::new(file);
 
-    let res = upload_range(&ctx, bucket, &object_name, 0, file, 20)
+    let res = upload_range(&ctx, &bucket, &object_name, 0, file, 20)
         .await
         .unwrap();
 

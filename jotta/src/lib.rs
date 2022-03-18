@@ -10,7 +10,6 @@ pub mod bucket;
 pub mod errors;
 pub mod object;
 
-use jotta_fs::auth::Provider;
 pub use jotta_fs::{auth, Fs};
 
 pub(crate) type Result<T> = core::result::Result<T, errors::Error>;
@@ -26,14 +25,6 @@ pub struct Config {
 }
 
 impl Config {
-    fn user_scoped_root(&self) -> String {
-        format!("{DEVICE}/{MOUNT_POINT}/{}", self.root)
-    }
-
-    fn root_on_device(&self) -> String {
-        format!("{MOUNT_POINT}/{}", self.root)
-    }
-
     /// Create a new config.
     pub fn new(root: impl Into<String>) -> Self {
         Self { root: root.into() }
@@ -42,16 +33,24 @@ impl Config {
 
 /// The context is used for all Jotta operations. Shared mutable state
 /// is achieved by internal `Arc`s.
-#[derive(Debug, Clone)]
-pub struct Context<P: Provider> {
-    fs: Fs<P>,
+#[derive(Debug)]
+pub struct Context {
+    fs: Fs,
     config: Config,
 }
 
-impl<P: Provider> Context<P> {
+impl Context {
     /// Initialize a new context.
     #[must_use]
-    pub fn new(fs: Fs<P>, config: Config) -> Self {
+    pub fn new(fs: Fs, config: Config) -> Self {
         Self { fs, config }
+    }
+
+    fn user_scoped_root(&self) -> String {
+        format!("{DEVICE}/{MOUNT_POINT}/{}", self.config.root)
+    }
+
+    fn root_on_device(&self) -> String {
+        format!("{MOUNT_POINT}/{}", self.config.root)
     }
 }

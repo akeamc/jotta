@@ -1,17 +1,17 @@
 //! Authentication and authorization for Jottacloud itself and whitelabel providers.
 //!
 //! ```
-//! use jotta_fs::auth::{TokenStore, provider::Tele2};
+//! use jotta_fs::auth::{DefaultTokenStore, provider::Tele2};
 //!
-//! let store = TokenStore::<Tele2>::new("refresh_token", "session_id");
+//! let store = DefaultTokenStore::<Tele2>::new("refresh_token", "session_id");
 //! ```
 use std::{
-    any::type_name,
     fmt::Debug,
     marker::PhantomData,
     sync::{Arc, RwLock},
 };
 
+use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
 
 use reqwest::{header, Client};
@@ -22,7 +22,7 @@ use tracing::{instrument, trace};
 use crate::Error;
 
 /// Generic auth provider.
-pub trait Provider {
+pub trait Provider: Debug + Send + Sync {
     /// Name of the session cookie, e.g. `jottacloud.session`.
     const SESSION_COOKIE_NAME: &'static str;
 
@@ -31,16 +31,16 @@ pub trait Provider {
 }
 
 /// A thread-safe caching token store.
-#[derive(Clone)]
-pub struct TokenStore<P: Provider> {
+#[derive(Debug)]
+pub struct DefaultTokenStore<P> {
     refresh_token: String,
     session_id: String,
     access_token: Arc<RwLock<Option<AccessToken>>>,
     provider: PhantomData<P>,
 }
 
-impl<P: Provider> TokenStore<P> {
-    /// Construct a new [`TokenStore`].
+impl<P> DefaultTokenStore<P> {
+    /// Construct a new [`DefaultTokenStore`].
     #[must_use]
     pub fn new(refresh_token: impl Into<String>, session_id: impl Into<String>) -> Self {
         Self {
@@ -50,19 +50,16 @@ impl<P: Provider> TokenStore<P> {
             provider: PhantomData::default(),
         }
     }
+}
 
-    /// Get the cached refresh token or renew it.
-    ///
-    /// # Errors
-    ///
-    /// None at the moment.
-    pub async fn get_refresh_token(&self, _client: &Client) -> crate::Result<String> {
+#[async_trait]
+impl<P: Provider> TokenStore for DefaultTokenStore<P> {
+    async fn get_refresh_token(&self, _client: &Client) -> crate::Result<String> {
         Ok(self.refresh_token.clone())
     }
 
-    /// Get the cached access token or renew it if it needs to be renewed.
     #[instrument(level = "trace", skip_all)]
-    pub async fn get_access_token(&self, client: &Client) -> crate::Result<AccessToken> {
+    async fn get_access_token(&self, client: &Client) -> crate::Result<AccessToken> {
         {
             let lock = self.access_token.read().unwrap();
 
@@ -103,15 +100,14 @@ impl<P: Provider> TokenStore<P> {
     }
 }
 
-impl<P: Provider> Debug for TokenStore<P> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("TokenStore")
-            .field("refresh_token", &self.refresh_token)
-            .field("session_id", &self.session_id)
-            .field("access_token", &self.access_token)
-            .field("provider", &type_name::<P>())
-            .finish()
-    }
+/// A [`TokenStore`] manages authentication tokens.
+#[async_trait]
+pub trait TokenStore: Debug + Send + Sync {
+    /// Get the cached refresh token or renew it.
+    async fn get_refresh_token(&self, client: &Client) -> crate::Result<String>;
+
+    /// Get the cached access token or renew it if it needs to be renewed.
+    async fn get_access_token(&self, client: &Client) -> crate::Result<AccessToken>;
 }
 
 /// Auth providers.
@@ -122,7 +118,7 @@ pub mod provider {
         ($name:ident, $domain:literal, $cookie_name:literal) => {
             /// Authentication provider with domain
             #[doc=$domain]
-            #[derive(Debug)]
+            #[derive(Debug, Clone)]
             pub struct $name;
 
             impl Provider for $name {

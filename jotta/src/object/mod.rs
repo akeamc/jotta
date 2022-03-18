@@ -5,7 +5,7 @@
 //! - One or more binary data chunks.
 use std::{fmt::Debug, str::FromStr, string::FromUtf8Error, time::Instant};
 
-use crate::{object::meta::get_meta, Context};
+use crate::{bucket::BucketName, object::meta::get_meta, Context};
 use bytes::{Bytes, BytesMut};
 use chrono::Utc;
 use futures_util::{
@@ -15,12 +15,12 @@ use futures_util::{
 };
 
 use jotta_fs::{
-    auth::Provider,
     files::{AllocReq, ConflictHandler, UploadRes},
     path::{PathOnDevice, UserScopedPath},
     ByteRange,
 };
 use mime::Mime;
+use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncBufRead, AsyncReadExt};
 use tracing::{debug, error, instrument, trace, warn};
 
@@ -48,7 +48,7 @@ pub const CHUNK_SIZE: usize = 1 << 20;
 /// assert!(ObjectName::from_str("hello\nworld").is_err());
 /// assert!(ObjectName::from_str("bye\r\nlword").is_err());
 /// ```
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 #[allow(clippy::module_name_repetitions)]
 pub struct ObjectName(String);
 
@@ -130,15 +130,15 @@ pub enum InvalidObjectName {
 ///
 /// Returns an error if there is no bucket with the specified name.
 #[instrument(skip(ctx))]
-pub async fn list_objects<P: Provider + Debug>(
-    ctx: &Context<P>,
-    bucket: &str,
+pub async fn list_objects(
+    ctx: &Context,
+    bucket: &BucketName<'_>,
 ) -> crate::Result<Vec<ObjectName>> {
     let folders = ctx
         .fs
         .index(&UserScopedPath(format!(
             "{}/{bucket}",
-            ctx.config.user_scoped_root()
+            ctx.user_scoped_root()
         )))
         .await?
         .folders
@@ -152,9 +152,9 @@ pub async fn list_objects<P: Provider + Debug>(
 
 /// Create an object. This does not upload any actual blobs, only metadata.
 #[instrument(skip(ctx))]
-pub async fn create_object<P: Provider>(
-    ctx: &Context<P>,
-    bucket: &str,
+pub async fn create_object(
+    ctx: &Context,
+    bucket: &BucketName<'_>,
     name: &ObjectName,
     content_type: Option<Mime>,
 ) -> crate::Result<()> {
@@ -171,9 +171,9 @@ pub async fn create_object<P: Provider>(
 }
 
 #[instrument(level = "trace", skip(ctx, bucket, name, body))]
-async fn upload_chunk<P: Provider>(
-    ctx: &Context<P>,
-    bucket: &str,
+async fn upload_chunk(
+    ctx: &Context,
+    bucket: &BucketName<'_>,
     name: &ObjectName,
     index: u32,
     body: Bytes, // there is no point accepting a stream since a checksum needs to be calculated prior to allocation anyway
@@ -186,7 +186,7 @@ async fn upload_chunk<P: Provider>(
     let req = AllocReq {
         path: &PathOnDevice(format!(
             "{}/{bucket}/{}",
-            ctx.config.root_on_device(),
+            ctx.root_on_device(),
             name.chunk_path(index)
         )),
         bytes: size,
@@ -205,21 +205,18 @@ async fn upload_chunk<P: Provider>(
     Ok(size)
 }
 
-async fn get_complete_chunk<P: Provider, R>(
-    ctx: &Context<P>,
-    bucket: &str,
+async fn get_complete_chunk<R: AsyncBufRead + Unpin>(
+    ctx: &Context,
+    bucket: &BucketName<'_>,
     name: &ObjectName,
     mut cursor: usize,
     chunk_no: u32,
     file: &mut R,
-) -> crate::Result<Option<Bytes>>
-where
-    R: AsyncBufRead + Unpin,
-{
+) -> crate::Result<Option<Bytes>> {
     let mut buf = BytesMut::with_capacity(CHUNK_SIZE);
     let chunk_path = &UserScopedPath(format!(
         "{}/{bucket}/{}",
-        ctx.config.user_scoped_root(),
+        ctx.user_scoped_root(),
         name.chunk_path(chunk_no)
     ));
 
@@ -278,17 +275,14 @@ where
 /// Upload a range of bytes. The remote object will
 /// be overwritten but not truncated.
 #[instrument(skip(ctx, file))]
-pub async fn upload_range<P: Provider, R>(
-    ctx: &Context<P>,
-    bucket: &str,
+pub async fn upload_range<R: AsyncBufRead + Unpin>(
+    ctx: &Context,
+    bucket: &BucketName<'_>,
     name: &ObjectName,
     offset: u64,
     file: R,
     num_connections: usize,
-) -> crate::Result<()>
-where
-    R: AsyncBufRead + Unpin,
-{
+) -> crate::Result<()> {
     let before = Instant::now();
 
     let chunks = stream::try_unfold((file, offset), move |(mut file, pos)| async move {
@@ -344,9 +338,9 @@ where
 /// **The integrity of the data is not checked by this function.**
 #[instrument(skip(ctx))]
 #[allow(clippy::manual_async_fn)] // lifetimes don't allow async syntax
-pub fn open_range<'a, P: Provider>(
-    ctx: &'a Context<P>,
-    bucket: &'a str,
+pub fn open_range<'a>(
+    ctx: &'a Context,
+    bucket: &'a BucketName<'a>,
     name: &'a ObjectName,
     num_connections: usize,
 ) -> impl Future<Output = crate::Result<(ObjectMeta, impl Stream<Item = crate::Result<Bytes>> + 'a)>> + 'a
@@ -363,7 +357,7 @@ pub fn open_range<'a, P: Provider>(
                     .file_to_bytes(
                         &UserScopedPath(format!(
                             "{}/{bucket}/{}",
-                            ctx.config.user_scoped_root(),
+                            ctx.user_scoped_root(),
                             name.chunk_path(chunk_no)
                         )),
                         ByteRange::full(),
@@ -390,16 +384,16 @@ pub fn open_range<'a, P: Provider>(
 
 /// Delete an object.
 #[instrument(skip(ctx))]
-pub async fn delete_object<P: Provider>(
-    ctx: &Context<P>,
-    bucket: &str,
+pub async fn delete_object(
+    ctx: &Context,
+    bucket: &BucketName<'_>,
     name: &ObjectName,
 ) -> crate::Result<()> {
     let _res = ctx
         .fs
         .delete_folder(&UserScopedPath(format!(
             "{}/{bucket}/{}",
-            ctx.config.user_scoped_root(),
+            ctx.user_scoped_root(),
             name.to_hex()
         )))
         .await?;

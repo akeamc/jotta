@@ -18,26 +18,26 @@ use tracing::{debug, instrument};
 
 use crate::{
     api::{read_json, read_xml, Exception, MaybeUnknown, XmlErrorBody},
-    auth::{self, TokenStore},
+    auth::TokenStore,
     files::{AllocReq, AllocRes, CompleteUploadRes, IncompleteUploadRes, UploadRes},
     jfs::{FileDetail, FolderDetail},
     path::UserScopedPath,
 };
 
 /// A Jottacloud "filesystem".
-#[derive(Debug, Clone)]
-pub struct Fs<P: auth::Provider> {
+#[derive(Debug)]
+pub struct Fs {
     client: Client,
-    token_store: TokenStore<P>,
+    token_store: Box<dyn TokenStore>,
 }
 
-impl<P: auth::Provider> Fs<P> {
+impl Fs {
     /// Create a new filesystem.
     #[must_use]
-    pub fn new(token_store: TokenStore<P>) -> Self {
+    pub fn new<S: TokenStore + 'static>(token_store: S) -> Self {
         Self {
             client: Client::new(),
-            token_store,
+            token_store: Box::new(token_store),
         }
     }
 

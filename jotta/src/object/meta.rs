@@ -1,7 +1,6 @@
 //! Object metadata.
 use chrono::{DateTime, Utc};
 use jotta_fs::{
-    auth::Provider,
     files::{AllocReq, ConflictHandler, UploadRes},
     path::{PathOnDevice, UserScopedPath},
     ByteRange,
@@ -11,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use serde_with::{serde_as, DisplayFromStr};
 use tracing::instrument;
 
-use crate::Context;
+use crate::{bucket::BucketName, Context};
 
 use super::ObjectName;
 
@@ -33,11 +32,9 @@ pub struct ObjectMeta {
     pub content_type: Mime,
 }
 
-impl ObjectMeta {}
-
-pub(crate) async fn set_meta<P: Provider>(
-    ctx: &Context<P>,
-    bucket: &str,
+pub(crate) async fn set_meta(
+    ctx: &Context,
+    bucket: &BucketName<'_>,
     name: &ObjectName,
     meta: &ObjectMeta,
     conflict_handler: ConflictHandler,
@@ -48,7 +45,7 @@ pub(crate) async fn set_meta<P: Provider>(
     let req = AllocReq {
         path: &PathOnDevice(format!(
             "{}/{bucket}/{}/meta",
-            ctx.config.root_on_device(),
+            ctx.root_on_device(),
             name.to_hex()
         )),
         bytes,
@@ -68,9 +65,9 @@ pub(crate) async fn set_meta<P: Provider>(
 }
 
 #[instrument(skip(ctx))]
-pub(crate) async fn get_meta<P: Provider>(
-    ctx: &Context<P>,
-    bucket: &str,
+pub(crate) async fn get_meta(
+    ctx: &Context,
+    bucket: &BucketName<'_>,
     name: &ObjectName,
 ) -> crate::Result<ObjectMeta> {
     let msg = ctx
@@ -78,7 +75,7 @@ pub(crate) async fn get_meta<P: Provider>(
         .file_to_bytes(
             &UserScopedPath(format!(
                 "{}/{bucket}/{}/meta",
-                ctx.config.user_scoped_root(),
+                ctx.user_scoped_root(),
                 name.to_hex()
             )),
             ByteRange::full(),
