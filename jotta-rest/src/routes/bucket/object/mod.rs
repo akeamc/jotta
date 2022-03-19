@@ -9,7 +9,7 @@ use jotta::{bucket::BucketName, object::ObjectName, Context};
 use jotta_fs::range::ClosedByteRange;
 use serde::{Deserialize, Serialize};
 
-use crate::AppResult;
+use crate::{AppConfig, AppResult};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ObjectPath {
@@ -17,13 +17,14 @@ pub struct ObjectPath {
     object: ObjectName,
 }
 
-pub async fn list_objects(ctx: Data<Context>, bucket: Path<BucketName>) -> AppResult<HttpResponse> {
+pub async fn list(ctx: Data<Context>, bucket: Path<BucketName>) -> AppResult<HttpResponse> {
     let objects = jotta::object::list_objects(&ctx, &bucket.into_inner()).await?;
 
     Ok(HttpResponse::Ok().json(objects))
 }
 
-pub async fn get_object(
+pub async fn get(
+    cfg: Data<AppConfig>,
     req: HttpRequest,
     ctx: Data<Context>,
     path: Path<ObjectPath>,
@@ -43,7 +44,7 @@ pub async fn get_object(
         path.bucket.clone(),
         path.object.clone(),
         range,
-        20,
+        cfg.connections_per_transfer,
     );
 
     let is_partial = range.len() < meta.size;
@@ -71,7 +72,17 @@ pub async fn get_object(
     Ok(res.streaming(Box::pin(stream)))
 }
 
+pub async fn delete(ctx: Data<Context>, path: Path<ObjectPath>) -> AppResult<HttpResponse> {
+    jotta::object::delete_object(&ctx, &path.bucket, &path.object).await?;
+
+    Ok(HttpResponse::NoContent().body(""))
+}
+
 pub fn config(cfg: &mut ServiceConfig) {
-    cfg.service(web::resource("").route(web::get().to(list_objects)))
-        .service(web::resource("/{object}").route(web::get().to(get_object)));
+    cfg.service(web::resource("").route(web::get().to(list)))
+        .service(
+            web::resource("/{object}")
+                .route(web::get().to(get))
+                .route(web::delete().to(delete)),
+        );
 }

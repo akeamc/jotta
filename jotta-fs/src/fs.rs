@@ -39,11 +39,7 @@ impl Fs {
         }
     }
 
-    async fn req_with_token(
-        &self,
-        method: Method,
-        url: impl IntoUrl,
-    ) -> crate::Result<RequestBuilder> {
+    async fn authed_req(&self, method: Method, url: impl IntoUrl) -> crate::Result<RequestBuilder> {
         let access_token = self.token_store.get_access_token(&self.client).await?;
 
         Ok(self.client.request(method, url).bearer_auth(access_token))
@@ -76,7 +72,7 @@ impl Fs {
 
         let url = FILES_V1_BASE.join(path)?;
 
-        self.req_with_token(method, url).await
+        self.authed_req(method, url).await
     }
 
     /// Allocate for uploading a new file or a new file revision.
@@ -113,7 +109,7 @@ impl Fs {
         range: RangeInclusive<u64>,
     ) -> crate::Result<UploadRes> {
         let res = self
-            .req_with_token(Method::POST, upload_url)
+            .authed_req(Method::POST, upload_url)
             .await?
             .body(body)
             .header(header::CONTENT_TYPE, "application/octet-stream")
@@ -164,7 +160,7 @@ impl Fs {
         read_xml(res).await
     }
 
-    /// Delete a folder. It must be a folder. It fails if you try to
+    /// **Permanently** delete a folder. It must be a folder. It fails if you try to
     /// delete a single file.
     ///
     /// # Errors
@@ -175,7 +171,8 @@ impl Fs {
         let res = self
             .jfs_req(Method::POST, path)
             .await?
-            .query(&[("dlDir", "true")])
+            // switching this to ?dlDir=true will move the folder to trash instead of irreversibly deleting
+            .query(&[("rmDir", "true")])
             .send()
             .await?;
 

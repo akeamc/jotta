@@ -5,7 +5,7 @@ use jotta::{
     auth::{provider, DefaultTokenStore},
     Config, Context, Fs,
 };
-use jotta_rest::routes;
+use jotta_rest::{routes, AppConfig};
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -25,6 +25,9 @@ async fn main() -> std::io::Result<()> {
 
     HttpServer::new(move || {
         App::new()
+            .app_data(Data::new(AppConfig {
+                connections_per_transfer: 10,
+            }))
             .app_data(data.clone())
             .wrap(middleware::NormalizePath::trim())
             .wrap(middleware::Logger::default())

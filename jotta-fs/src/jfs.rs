@@ -293,11 +293,16 @@ pub struct Files {
     pub inner: Vec<ListedFile>,
 }
 
+#[serde_as]
 /// Basic folder information.
 #[derive(Debug, Deserialize)]
 pub struct Folder {
     /// Name of the folder.
     pub name: String,
+    /// Optional deletion date.
+    #[serde_as(as = "OptTypoDateTime")]
+    #[serde(default)]
+    pub deleted: Option<DateTime<Utc>>,
 }
 
 /// Folders wrapper.
