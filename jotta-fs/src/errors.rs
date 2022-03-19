@@ -50,6 +50,10 @@ pub enum Error {
     /// Token was not successfully renewed.
     #[error("token renewal failed")]
     TokenRenewalFailed,
+
+    /// Range not satisfiable.
+    #[error("range not satisfiable")]
+    RangeNotSatisfiable,
 }
 
 /// All possible errors returned by the upstream Jottacloud API.
@@ -91,6 +95,7 @@ impl From<Exception> for Error {
             }
             Exception::InvalidArgumentException => Error::InvalidArgument,
             Exception::IncompleteUploadOpenApiException => Error::IncompleteUpload,
+            Exception::RequestedRangeNotSatisfiedException => Error::RangeNotSatisfiable,
         }
     }
 }

@@ -1,9 +1,6 @@
 //! A higher-level but still pretty low-level Jottacloud client with
 //! basic filesystem capabilities.
-use std::{
-    fmt::{Debug},
-    ops::{RangeInclusive},
-};
+use std::{fmt::Debug, ops::RangeInclusive};
 
 use bytes::Bytes;
 use futures::{Stream, TryStreamExt};
@@ -22,7 +19,7 @@ use crate::{
     files::{AllocReq, AllocRes, CompleteUploadRes, IncompleteUploadRes, UploadRes},
     jfs::{FileDetail, FolderDetail},
     path::UserScopedPath,
-    range::ByteRange,
+    range::{ByteRange, OpenByteRange},
 };
 
 /// A Jottacloud "filesystem".
@@ -189,17 +186,15 @@ impl Fs {
     async fn file_bin(
         &self,
         path: &UserScopedPath,
-        range: impl Into<ByteRange>,
+        range: impl ByteRange,
     ) -> crate::Result<Response> {
         debug!("requesting file");
-
-        let range: ByteRange = range.into();
 
         let res = self
             .jfs_req(Method::GET, path)
             .await?
             .query(&[("mode", "bin")])
-            .header(header::RANGE, range)
+            .header(header::RANGE, range.to_http())
             .send()
             .await?;
 
@@ -223,7 +218,7 @@ impl Fs {
     pub async fn file_to_stream(
         &self,
         path: &UserScopedPath,
-        range: impl Into<ByteRange>,
+        range: impl ByteRange,
     ) -> crate::Result<impl Stream<Item = crate::Result<Bytes>>> {
         let res = self.file_bin(path, range).await?;
 
@@ -239,7 +234,11 @@ impl Fs {
     /// - network errors
     /// - jottacloud errors
     pub async fn file_to_string(&self, path: &UserScopedPath) -> crate::Result<String> {
-        let text = self.file_bin(path, ByteRange::full()).await?.text().await?;
+        let text = self
+            .file_bin(path, OpenByteRange::full())
+            .await?
+            .text()
+            .await?;
 
         Ok(text)
     }
@@ -255,7 +254,7 @@ impl Fs {
     pub async fn file_to_bytes(
         &self,
         path: &UserScopedPath,
-        range: impl Into<ByteRange>,
+        range: impl ByteRange,
     ) -> crate::Result<Bytes> {
         let res = self.file_bin(path, range).await?;
 

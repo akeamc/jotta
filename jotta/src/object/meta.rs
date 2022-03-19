@@ -3,7 +3,7 @@ use chrono::{DateTime, Utc};
 use jotta_fs::{
     files::{AllocReq, ConflictHandler, UploadRes},
     path::{PathOnDevice, UserScopedPath},
-    range::ByteRange,
+    range::OpenByteRange,
 };
 use mime::Mime;
 use serde::{Deserialize, Serialize};
@@ -64,8 +64,9 @@ pub(crate) async fn set_meta(
     Ok(())
 }
 
+/// Get metadata associated with an object.
 #[instrument(skip(ctx))]
-pub(crate) async fn get_meta(
+pub async fn get_meta(
     ctx: &Context,
     bucket: &BucketName,
     name: &ObjectName,
@@ -78,7 +79,7 @@ pub(crate) async fn get_meta(
                 ctx.user_scoped_root(),
                 name.to_hex()
             )),
-            ByteRange::full(),
+            OpenByteRange::full(),
         )
         .await?;
 

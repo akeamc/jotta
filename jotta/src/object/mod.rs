@@ -10,15 +10,14 @@ use bytes::{Bytes, BytesMut};
 use chrono::Utc;
 use derive_more::{AsRef, Deref, DerefMut, Display};
 use futures_util::{
-    future,
     stream::{self},
-    Future, Stream, StreamExt, TryStreamExt,
+    Stream, StreamExt, TryStreamExt,
 };
 
 use jotta_fs::{
     files::{AllocReq, ConflictHandler, UploadRes},
     path::{PathOnDevice, UserScopedPath},
-    range::ByteRange,
+    range::{ByteRange, ClosedByteRange, OpenByteRange},
 };
 use mime::Mime;
 use serde::{Deserialize, Serialize};
@@ -236,7 +235,7 @@ async fn get_complete_chunk<R: AsyncBufRead + Unpin>(
             .fs
             .file_to_bytes(
                 chunk_path,
-                ByteRange::try_from_bounds(0..(cursor as u64)).unwrap(),
+                ClosedByteRange::new_to_including(cursor as u64 - 1),
             )
             .await?;
 
@@ -268,14 +267,17 @@ async fn get_complete_chunk<R: AsyncBufRead + Unpin>(
         // If the case is the latter, we need to download the tail of this chunk in order not to
         // accidentally truncate the file.
 
-        let tail = ctx
+        println!("we need tail");
+
+        let tail = match ctx
             .fs
-            .file_to_bytes(
-                chunk_path,
-                ByteRange::try_from_bounds(cursor as u64..).unwrap(),
-            )
+            .file_to_bytes(chunk_path, OpenByteRange::new(cursor as u64))
             .await
-            .unwrap_or_default(); // TODO: actual error handling
+        {
+            Ok(bytes) => bytes,
+            Err(jotta_fs::Error::NoSuchFileOrFolder) => Bytes::new(), // no tail was found. no worries
+            Err(e) => return Err(e.into()),
+        };
 
         buf.extend_from_slice(&tail);
     }
@@ -344,7 +346,9 @@ pub async fn upload_range<R: AsyncBufRead + Unpin>(
     set_meta(ctx, bucket, name, &meta, ConflictHandler::CreateNewRevision).await
 }
 
-fn aligned_chunked_byte_range(range: ByteRange) -> impl Iterator<Item = (u32, ByteRange)> {
+fn aligned_chunked_byte_range(
+    range: impl ByteRange,
+) -> impl Iterator<Item = (u32, ClosedByteRange)> {
     let mut pos = range.start();
 
     iter::from_fn(move || {
@@ -352,17 +356,15 @@ fn aligned_chunked_byte_range(range: ByteRange) -> impl Iterator<Item = (u32, By
         let chunk_no = (pos / (CHUNK_SIZE as u64)) as u32;
         let chunk_start = pos % (CHUNK_SIZE as u64);
 
-        let chunk_size = (range.end().unwrap_or(u64::MAX) - pos).min(CHUNK_SIZE as _);
+        let chunk_end = (range.end().unwrap_or(u64::MAX) - pos).min(CHUNK_SIZE as _);
 
-        if chunk_size == 0 {
+        if chunk_end == 0 {
             return None;
         }
 
-        let chunk_end = chunk_size - 1;
+        let chunk = ClosedByteRange::try_from_bounds(chunk_start, chunk_end).unwrap();
 
-        let chunk = ByteRange::try_new(Some(chunk_start), Some(chunk_end)).unwrap();
-
-        pos += chunk.len().unwrap();
+        pos += chunk_end - chunk_start;
 
         Some((chunk_no, chunk))
     })
@@ -371,56 +373,43 @@ fn aligned_chunked_byte_range(range: ByteRange) -> impl Iterator<Item = (u32, By
 /// Open a stream to an object.
 ///
 /// **The integrity of the data is not checked by this function.**
+///
+/// # Errors
+///
+/// The stream will eventually return an error if `range` is infinite,
+/// since there won't be enough chunks in the cloud to satisfy the
+/// range.
 #[instrument(skip(ctx))]
 #[allow(clippy::manual_async_fn)] // lifetimes don't allow async syntax
-pub fn open_range<'a>(
+pub fn stream_range<'a>(
     ctx: Arc<Context>,
     bucket: BucketName,
     name: ObjectName,
-    range: ByteRange,
+    range: ClosedByteRange,
     num_connections: usize,
-) -> impl Future<Output = crate::Result<(ObjectMeta, impl Stream<Item = crate::Result<Bytes>> + 'a)>>
-{
-    async move {
-        let meta = get_meta(&ctx, &bucket, &name).await?;
+) -> impl Stream<Item = crate::Result<Bytes>> + 'a {
+    stream::iter(aligned_chunked_byte_range(range))
+        .map(move |(chunk_no, range)| {
+            let ctx = ctx.clone();
+            let bucket = bucket.clone();
+            let name = name.clone();
 
-        let futures = stream::iter(aligned_chunked_byte_range(range))
-            .map(move |(chunk_no, range)| {
-                let ctx = ctx.clone();
-                let bucket = bucket.clone();
-                let name = name.clone();
-
-                async move {
-                    match ctx
-                        .fs
-                        .file_to_bytes(
-                            &UserScopedPath(format!(
-                                "{}/{}/{}",
-                                ctx.user_scoped_root(),
-                                &bucket,
-                                name.clone().chunk_path(chunk_no)
-                            )),
-                            range,
-                        )
-                        .await
-                    {
-                        // Ok(s) => Some(s),
-                        Ok(b) => Some(Ok(b)),
-                        Err(e) => {
-                            warn!("encountered an error while reading chunk: {:?}", e);
-                            None
-                        }
-                    }
-                }
-            })
-            .buffered(num_connections);
-
-        let stream = futures
-            .take_while(|d| future::ready(d.is_some()))
-            .map(Option::unwrap);
-
-        Ok((meta, stream))
-    }
+            async move {
+                ctx.fs
+                    .file_to_bytes(
+                        &UserScopedPath(format!(
+                            "{}/{}/{}",
+                            ctx.user_scoped_root(),
+                            &bucket,
+                            name.clone().chunk_path(chunk_no)
+                        )),
+                        range,
+                    )
+                    .await
+            }
+        })
+        .buffered(num_connections)
+        .map_err(Into::into)
 }
 
 /// Delete an object.
@@ -444,57 +433,46 @@ pub async fn delete_object(
 
 #[cfg(test)]
 mod tests {
-    use jotta_fs::range::ByteRange;
+    use jotta_fs::range::{ClosedByteRange, OpenByteRange};
 
     use crate::object::{aligned_chunked_byte_range, CHUNK_SIZE};
 
     #[test]
     fn create_aligned_chunks() {
-        let mut iter = aligned_chunked_byte_range(ByteRange::full());
+        let mut iter = aligned_chunked_byte_range(OpenByteRange::full());
 
         assert_eq!(
             iter.next().unwrap(),
-            (
-                0,
-                ByteRange::try_new(Some(0), Some(CHUNK_SIZE as u64 - 1)).unwrap()
-            )
+            (0, ClosedByteRange::new_to_including(CHUNK_SIZE as _))
         );
         assert_eq!(
             iter.next().unwrap(),
-            (
-                1,
-                ByteRange::try_new(Some(0), Some(CHUNK_SIZE as u64 - 1)).unwrap()
-            )
+            (1, ClosedByteRange::new_to_including(CHUNK_SIZE as _))
         );
         assert_eq!(
             iter.next().unwrap(),
-            (
-                2,
-                ByteRange::try_new(Some(0), Some(CHUNK_SIZE as u64 - 1)).unwrap()
-            )
+            (2, ClosedByteRange::new_to_including(CHUNK_SIZE as _))
         );
 
         assert_eq!(
-            aligned_chunked_byte_range(ByteRange::try_new(Some(40), Some(2_500_000)).unwrap())
+            aligned_chunked_byte_range(ClosedByteRange::try_from(40..=2_500_000).unwrap())
                 .collect::<Vec<_>>(),
             vec![
-                (0, ByteRange::try_new(Some(40), Some(1_048_575)).unwrap()),
-                (1, ByteRange::try_new(Some(0), Some(1_048_575)).unwrap()),
-                (2, ByteRange::try_new(Some(0), Some(402_847)).unwrap())
+                (0, ClosedByteRange::try_from_bounds(40, 1_048_576).unwrap()),
+                (1, ClosedByteRange::new_to_including(1_048_576)),
+                (2, ClosedByteRange::new_to_including(402_848))
             ]
         );
 
         assert_eq!(
-            aligned_chunked_byte_range(
-                ByteRange::try_new(Some(69_420_000), Some(71_000_000)).unwrap()
-            )
-            .collect::<Vec<_>>(),
+            aligned_chunked_byte_range(ClosedByteRange::try_from(69_420_000..=71_000_000).unwrap())
+                .collect::<Vec<_>>(),
             vec![
                 (
                     66,
-                    ByteRange::try_new(Some(213_984), Some(1_048_575)).unwrap()
+                    ClosedByteRange::try_from_bounds(213_984, 1_048_576).unwrap()
                 ),
-                (67, ByteRange::try_new(Some(0), Some(745_407)).unwrap())
+                (67, ClosedByteRange::new_to_including(745_408))
             ]
         );
     }

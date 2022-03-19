@@ -26,6 +26,8 @@ pub enum Exception {
     /// This exception is thrown when uploading chunked data
     /// for some reason, along with an `HTTP 420` status.
     IncompleteUploadOpenApiException,
+    /// Range not satisfiable.
+    RequestedRangeNotSatisfiedException,
 }
 
 /// A JSON error body returned by the JSON API on errors.
@@ -67,9 +69,12 @@ impl JavaErrorMessage {
     /// ```
     #[must_use]
     pub fn exception_opt(&self) -> Option<Exception> {
-        static RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^(?:\w+\.)*(?P<except>\w+):").unwrap());
+        static RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^(?:\w+\.)*(?P<except>\w+)").unwrap());
 
-        match Exception::from_str(RE.captures(&self.0)?.name("except")?.as_str()) {
+        let captures = RE.captures(&self.0)?;
+        let exception_str = captures.name("except")?.as_str();
+
+        match Exception::from_str(exception_str) {
             Ok(exception) => Some(exception),
             Err(err) => {
                 warn!(

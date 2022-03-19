@@ -1,4 +1,5 @@
 use actix_web::{http::StatusCode, ResponseError};
+use http_range::HttpRangeParseError;
 #[derive(Debug, thiserror::Error)]
 pub enum AppError {
     #[error("internal server error")]
@@ -9,6 +10,8 @@ pub enum AppError {
     Conflict,
     #[error("not found")]
     NotFound,
+    #[error("range not satisfiable")]
+    RangeNotSatisfiable,
 }
 
 impl From<jotta::errors::Error> for AppError {
@@ -26,6 +29,7 @@ impl From<jotta::errors::Error> for AppError {
                 jotta_fs::Error::InvalidArgument => Self::BadRequest,
                 jotta_fs::Error::CorruptUpload => Self::InternalError,
                 jotta_fs::Error::TokenRenewalFailed => Self::InternalError,
+                jotta_fs::Error::RangeNotSatisfiable => Self::InternalError,
             },
             jotta::errors::Error::InvalidObjectName(_) => Self::BadRequest,
             jotta::errors::Error::MsgpackEncode(_) => Self::InternalError,
@@ -42,6 +46,13 @@ impl ResponseError for AppError {
             AppError::BadRequest => StatusCode::BAD_REQUEST,
             AppError::Conflict => StatusCode::CONFLICT,
             AppError::NotFound => StatusCode::NOT_FOUND,
+            AppError::RangeNotSatisfiable => StatusCode::RANGE_NOT_SATISFIABLE,
         }
+    }
+}
+
+impl From<HttpRangeParseError> for AppError {
+    fn from(_: HttpRangeParseError) -> Self {
+        Self::RangeNotSatisfiable
     }
 }

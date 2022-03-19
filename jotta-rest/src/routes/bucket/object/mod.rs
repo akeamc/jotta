@@ -4,8 +4,9 @@ use actix_web::{
     HttpRequest, HttpResponse,
 };
 
+use http_range::HttpRange;
 use jotta::{bucket::BucketName, object::ObjectName, Context};
-use jotta_fs::range::ByteRange;
+use jotta_fs::range::ClosedByteRange;
 use serde::{Deserialize, Serialize};
 
 use crate::AppResult;
@@ -27,46 +28,43 @@ pub async fn get_object(
     ctx: Data<Context>,
     path: Path<ObjectPath>,
 ) -> AppResult<HttpResponse> {
-    let range = match req
-        .headers()
-        .get("range")
-        .and_then(|h| ByteRange::parse_http(h.to_str().ok()?).ok())
-    {
-        Some(mut ranges) => std::mem::replace(&mut ranges[0], ByteRange::full()), // TODO: probably panics if "Range" is an empty string
-        None => ByteRange::full(),
-    };
+    let meta = jotta::object::meta::get_meta(&ctx, &path.bucket, &path.object).await?;
 
-    dbg!(&range);
+    let range = req.headers().get("range").map_or(
+        Ok(ClosedByteRange::new_to_including(meta.size)),
+        |header| {
+            HttpRange::parse_bytes(header.as_bytes(), meta.size)
+                .map(|ranges| ClosedByteRange::new(ranges[0].start, ranges[0].length))
+        },
+    )?;
 
-    let (meta, stream) = jotta::object::open_range(
+    let stream = jotta::object::stream_range(
         ctx.into_inner(),
         path.bucket.clone(),
         path.object.clone(),
         range,
         20,
-    )
-    .await?;
+    );
 
-    let status = if range.is_full() {
-        StatusCode::OK
-    } else {
+    let is_partial = range.len() < meta.size;
+
+    let status = if is_partial {
         StatusCode::PARTIAL_CONTENT
+    } else {
+        StatusCode::OK
     };
 
     let mut res = HttpResponse::build(status);
-    res.content_type(meta.content_type)
-        .insert_header((header::CONTENT_LENGTH, meta.size - range.start()))
-        .insert_header((header::ACCEPT_RANGES, "bytes"));
 
-    if !range.is_full() {
+    res.content_type(meta.content_type)
+        .insert_header((header::CONTENT_LENGTH, range.len()))
+        .insert_header((header::ACCEPT_RANGES, "bytes"))
+        .insert_header((header::LAST_MODIFIED, meta.updated.to_rfc2822()));
+
+    if is_partial {
         res.insert_header((
             header::CONTENT_RANGE,
-            format!(
-                "bytes {}-{}/{}",
-                range.start(),
-                range.end().unwrap_or(meta.size),
-                meta.size
-            ),
+            format!("bytes {}-{}/{}", range.start(), range.end(), meta.size),
         ));
     }
 
