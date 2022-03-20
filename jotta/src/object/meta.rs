@@ -9,7 +9,7 @@ use jotta_fs::{
 use mime::Mime;
 use serde::{Deserialize, Serialize};
 use serde_with::{serde_as, DisplayFromStr};
-use tracing::{instrument, warn};
+use tracing::{error, instrument, warn};
 
 use crate::{bucket::BucketName, Context};
 use crate::{errors::Error, serde::NullAsDefault};
@@ -197,7 +197,10 @@ pub async fn get(ctx: &Context, bucket: &BucketName, name: &ObjectName) -> crate
         )
         .await?;
 
-    let meta = rmp_serde::from_slice(&msg)?;
+    let meta = rmp_serde::from_slice(&msg).map_err(|e| {
+        error!("parse metadata failed: {}", e);
+        e
+    })?;
 
     Ok(meta)
 }
