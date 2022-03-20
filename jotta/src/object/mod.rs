@@ -11,7 +11,7 @@ use chrono::Utc;
 use derive_more::{AsRef, Deref, DerefMut, Display};
 use futures_util::{
     stream::{self},
-    Stream, StreamExt, TryStreamExt,
+    AsyncBufRead, AsyncReadExt, Stream, StreamExt, TryStreamExt,
 };
 
 use jotta_fs::{
@@ -20,7 +20,6 @@ use jotta_fs::{
     range::{ByteRange, ClosedByteRange, OpenByteRange},
 };
 use serde::{Deserialize, Serialize};
-use tokio::io::{AsyncBufRead, AsyncReadExt};
 use tracing::{debug, error, instrument, trace, warn};
 
 use self::meta::{set_raw, Meta, Patch};
@@ -166,7 +165,7 @@ pub async fn create_object(
     bucket: &BucketName,
     name: &ObjectName,
     meta: Patch,
-) -> crate::Result<()> {
+) -> crate::Result<Meta> {
     let now = Utc::now();
 
     let meta = Meta {
@@ -177,7 +176,9 @@ pub async fn create_object(
         cache_control: meta.cache_control.unwrap_or_default(),
     };
 
-    set_raw(ctx, bucket, name, &meta, ConflictHandler::RejectConflicts).await
+    set_raw(ctx, bucket, name, &meta, ConflictHandler::RejectConflicts).await?;
+
+    Ok(meta)
 }
 
 #[instrument(level = "trace", skip(ctx, bucket, name, body))]
@@ -295,7 +296,7 @@ pub async fn upload_range<R: AsyncBufRead + Unpin>(
     offset: u64,
     file: R,
     num_connections: usize,
-) -> crate::Result<()> {
+) -> crate::Result<Meta> {
     let before = Instant::now();
 
     let chunks = stream::try_unfold((file, offset), move |(mut file, pos)| async move {
@@ -343,7 +344,9 @@ pub async fn upload_range<R: AsyncBufRead + Unpin>(
         ..meta
     };
 
-    set_raw(ctx, bucket, name, &meta, ConflictHandler::CreateNewRevision).await
+    set_raw(ctx, bucket, name, &meta, ConflictHandler::CreateNewRevision).await?;
+
+    Ok(meta)
 }
 
 fn aligned_chunked_byte_range(

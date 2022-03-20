@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 dotenv = "0.15.0"
-jotta = "0.1.4"
+jotta = "0.1.6"
 tokio = { version = "1.17.0", features = ["macros", "full"] }
 tracing-subscriber = "0.3.9"
 

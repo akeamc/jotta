@@ -12,6 +12,8 @@ pub enum AppError {
     NotFound,
     #[error("range not satisfiable")]
     RangeNotSatisfiable,
+    #[error("invalid input: {message}")]
+    InvalidInput { message: String },
 }
 
 impl From<jotta::errors::Error> for AppError {
@@ -31,7 +33,9 @@ impl From<jotta::errors::Error> for AppError {
                 jotta_fs::Error::TokenRenewalFailed => Self::InternalError,
                 jotta_fs::Error::RangeNotSatisfiable => Self::InternalError,
             },
-            jotta::errors::Error::InvalidObjectName(_) => Self::BadRequest,
+            jotta::errors::Error::InvalidObjectName(o) => Self::InvalidInput {
+                message: o.to_string(),
+            },
             jotta::errors::Error::MsgpackEncode(_) => Self::InternalError,
             jotta::errors::Error::MsgpackDecode(_) => Self::InternalError,
             jotta::errors::Error::IoError(_) => Self::InternalError,
@@ -47,6 +51,7 @@ impl ResponseError for AppError {
             AppError::Conflict => StatusCode::CONFLICT,
             AppError::NotFound => StatusCode::NOT_FOUND,
             AppError::RangeNotSatisfiable => StatusCode::RANGE_NOT_SATISFIABLE,
+            AppError::InvalidInput { .. } => StatusCode::BAD_REQUEST,
         }
     }
 }
@@ -54,5 +59,13 @@ impl ResponseError for AppError {
 impl From<HttpRangeParseError> for AppError {
     fn from(_: HttpRangeParseError) -> Self {
         Self::RangeNotSatisfiable
+    }
+}
+
+impl From<mime::FromStrError> for AppError {
+    fn from(e: mime::FromStrError) -> Self {
+        Self::InvalidInput {
+            message: e.to_string(),
+        }
     }
 }

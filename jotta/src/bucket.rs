@@ -26,8 +26,8 @@ use tracing::{debug, instrument};
 pub struct BucketName(String);
 
 /// Invalid bucket name.
-#[derive(Debug)]
-pub struct InvalidBucketName;
+#[derive(Debug, thiserror::Error)]
+pub enum InvalidBucketName {}
 
 impl FromStr for BucketName {
     type Err = InvalidBucketName;

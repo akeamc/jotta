@@ -3,28 +3,37 @@ use actix_web::{
         header::{self, ContentType},
         StatusCode,
     },
-    web::{self, Data, Json, Path, Query, ServiceConfig},
-    HttpRequest, HttpResponse, HttpResponseBuilder,
+    web::{self, Data, Json, Path, Payload, Query, ServiceConfig},
+    HttpMessage, HttpRequest, HttpResponse, HttpResponseBuilder,
 };
 
+use futures_util::{io::BufReader, TryStreamExt};
 use http_range::HttpRange;
 use httpdate::fmt_http_date;
 use jotta::{
     bucket::BucketName,
     object::{
+        create_object,
         meta::{Meta, Patch},
-        ObjectName,
+        upload_range, ObjectName,
     },
     Context,
 };
 use jotta_fs::range::ClosedByteRange;
+use mime::Mime;
 use serde::{Deserialize, Serialize};
+use serde_with::{serde_as, DisplayFromStr};
+
+use std::io::{Error as IoError, ErrorKind as IoErrorKind};
 
 use crate::{errors::AppError, AppConfig, AppResult};
 
+#[serde_as]
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ObjectPath {
+    #[serde_as(as = "DisplayFromStr")]
     bucket: BucketName,
+    #[serde_as(as = "DisplayFromStr")]
     object: ObjectName,
 }
 
@@ -40,6 +49,73 @@ fn append_object_headers(res: &mut HttpResponseBuilder, meta: &Meta) {
         .append_header((header::ACCEPT_RANGES, "bytes"))
         .append_header((header::LAST_MODIFIED, fmt_http_date(meta.updated.into())))
         .append_header((header::CACHE_CONTROL, meta.cache_control.0.clone()));
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum UploadType {
+    Media,
+    Multipart,
+    Resumable,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PostParameters {
+    upload_type: UploadType,
+}
+
+pub async fn post(
+    cfg: Data<AppConfig>,
+    ctx: Data<Context>,
+    path: Path<ObjectPath>,
+    params: Query<PostParameters>,
+    data: Payload,
+    req: HttpRequest,
+) -> AppResult<HttpResponse> {
+    let content_type = req.content_type();
+
+    let content_type = if content_type.is_empty() {
+        None
+    } else {
+        let mime: Mime = content_type.parse()?;
+        Some(jotta::object::meta::ContentType(mime))
+    };
+
+    match params.upload_type {
+        UploadType::Media => {
+            let meta = Patch {
+                content_type,
+                cache_control: None,
+            };
+
+            let _meta = create_object(&ctx, &path.bucket, &path.object, meta).await?;
+
+            let reader = data
+                .map_err(|r| IoError::new(IoErrorKind::Other, r))
+                .into_async_read();
+
+            let reader = BufReader::new(reader);
+
+            let meta = upload_range(
+                &ctx,
+                &path.bucket,
+                &path.object,
+                0,
+                reader,
+                cfg.connections_per_transfer,
+            )
+            .await?;
+
+            let mut res = HttpResponse::Ok();
+
+            append_object_headers(&mut res, &meta); // TODO: should we really return a cache-control header here?
+
+            Ok(res.content_type(ContentType::json()).json(meta))
+        }
+        UploadType::Multipart => todo!(),
+        UploadType::Resumable => todo!(),
+    }
 }
 
 pub async fn head(ctx: Data<Context>, path: Path<ObjectPath>) -> AppResult<HttpResponse> {
@@ -147,6 +223,7 @@ pub fn config(cfg: &mut ServiceConfig) {
     cfg.service(web::resource("").route(web::get().to(list)))
         .service(
             web::resource("/{object}")
+                .route(web::post().to(post))
                 .route(web::head().to(head))
                 .route(web::get().to(get))
                 .route(web::patch().to(patch))
