@@ -9,6 +9,7 @@
 pub mod bucket;
 pub mod errors;
 pub mod object;
+pub(crate) mod serde;
 
 pub use jotta_fs::{auth, Fs};
 

@@ -5,7 +5,7 @@
 //! - One or more binary data chunks.
 use std::{fmt::Debug, iter, str::FromStr, string::FromUtf8Error, sync::Arc, time::Instant};
 
-use crate::{bucket::BucketName, object::meta::get_meta, Context};
+use crate::{bucket::BucketName, object::meta::get, Context};
 use bytes::{Bytes, BytesMut};
 use chrono::Utc;
 use derive_more::{AsRef, Deref, DerefMut, Display};
@@ -19,12 +19,11 @@ use jotta_fs::{
     path::{PathOnDevice, UserScopedPath},
     range::{ByteRange, ClosedByteRange, OpenByteRange},
 };
-use mime::Mime;
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncBufRead, AsyncReadExt};
 use tracing::{debug, error, instrument, trace, warn};
 
-use self::meta::{set_meta, ObjectMeta};
+use self::meta::{set_raw, Meta, Patch};
 
 pub mod meta;
 
@@ -160,24 +159,25 @@ pub async fn list_objects(ctx: &Context, bucket: &BucketName) -> crate::Result<V
         .collect::<crate::Result<Vec<_>>>()
 }
 
-/// Create an object. This does not upload any actual blobs, only metadata.
+/// Create an object. This does not upload any actual binary data, only metadata.
 #[instrument(skip(ctx))]
 pub async fn create_object(
     ctx: &Context,
     bucket: &BucketName,
     name: &ObjectName,
-    content_type: Option<Mime>,
+    meta: Patch,
 ) -> crate::Result<()> {
     let now = Utc::now();
 
-    let meta = ObjectMeta {
+    let meta = Meta {
         size: 0,
         created: now,
         updated: now,
-        content_type: content_type.unwrap_or(mime::APPLICATION_OCTET_STREAM),
+        content_type: meta.content_type.unwrap_or_default(),
+        cache_control: meta.cache_control.unwrap_or_default(),
     };
 
-    set_meta(ctx, bucket, name, &meta, ConflictHandler::RejectConflicts).await
+    set_raw(ctx, bucket, name, &meta, ConflictHandler::RejectConflicts).await
 }
 
 #[instrument(level = "trace", skip(ctx, bucket, name, body))]
@@ -335,15 +335,15 @@ pub async fn upload_range<R: AsyncBufRead + Unpin>(
         bytes_per_second * 8.0 / 1_000_000.0
     );
 
-    let meta = get_meta(ctx, bucket, name).await?;
+    let meta = get(ctx, bucket, name).await?;
 
-    let meta = ObjectMeta {
+    let meta = Meta {
         size: meta.size.max(bytes_uploaded + offset),
         updated: Utc::now(),
         ..meta
     };
 
-    set_meta(ctx, bucket, name, &meta, ConflictHandler::CreateNewRevision).await
+    set_raw(ctx, bucket, name, &meta, ConflictHandler::CreateNewRevision).await
 }
 
 fn aligned_chunked_byte_range(

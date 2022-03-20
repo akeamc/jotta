@@ -22,6 +22,15 @@ use crate::{
     range::{ByteRange, OpenByteRange},
 };
 
+/// `User-Agent` used in all requests to Jottacloud.
+pub static USER_AGENT: &str = concat!(
+    env!("CARGO_PKG_NAME"),
+    "/",
+    env!("CARGO_PKG_VERSION"),
+    " ",
+    env!("CARGO_PKG_REPOSITORY")
+);
+
 /// A Jottacloud "filesystem".
 #[derive(Debug)]
 pub struct Fs {
@@ -31,10 +40,14 @@ pub struct Fs {
 
 impl Fs {
     /// Create a new filesystem.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the HTTP client fails to initialize.
     #[must_use]
     pub fn new<S: TokenStore + 'static>(token_store: S) -> Self {
         Self {
-            client: Client::new(),
+            client: Client::builder().user_agent(USER_AGENT).build().unwrap(),
             token_store: Box::new(token_store),
         }
     }

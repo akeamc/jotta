@@ -35,7 +35,7 @@ async fn main() {
         &ctx,
         &bucket,
         &object_name,
-        None,
+        Default::default(),
         // Some("video/mp4".parse().unwrap()),
     )
     .await
