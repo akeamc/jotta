@@ -69,7 +69,7 @@ impl Fs {
         let access_token = self.token_store.get_access_token(&self.client).await?;
 
         let url = JFS_BASE
-            .join(&format!("{}/", access_token.username()))?
+            .join(&format!("{}/", self.token_store.username()))?
             .join(path)?;
 
         Ok(self.client.request(method, url).bearer_auth(access_token))

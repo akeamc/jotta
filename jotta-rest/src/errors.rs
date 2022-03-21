@@ -14,6 +14,10 @@ pub enum AppError {
     RangeNotSatisfiable,
     #[error("invalid input: {message}")]
     InvalidInput { message: String },
+    #[error("{0}")]
+    ActixError(#[from] actix_web::Error),
+    #[error("{0}")]
+    ContentTypeError(#[from] actix_http::error::ContentTypeError),
 }
 
 impl From<jotta::errors::Error> for AppError {
@@ -52,6 +56,8 @@ impl ResponseError for AppError {
             AppError::NotFound => StatusCode::NOT_FOUND,
             AppError::RangeNotSatisfiable => StatusCode::RANGE_NOT_SATISFIABLE,
             AppError::InvalidInput { .. } => StatusCode::BAD_REQUEST,
+            AppError::ActixError(e) => e.error_response().status(),
+            AppError::ContentTypeError(e) => e.status_code(),
         }
     }
 }

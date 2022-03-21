@@ -1,10 +1,7 @@
 use std::env;
 
 use actix_web::{middleware, web::Data, App, HttpServer};
-use jotta::{
-    auth::{provider, DefaultTokenStore},
-    Config, Context, Fs,
-};
+use jotta::{auth::LegacyTokenStore, Config, Context, Fs};
 use jotta_rest::{routes, AppConfig};
 
 #[actix_web::main]
@@ -13,10 +10,15 @@ async fn main() -> std::io::Result<()> {
 
     tracing_subscriber::fmt::init();
 
-    let refresh_token = env::var("REFRESH_TOKEN").expect("REFRESH_TOKEN not set");
-    let session_id = env::var("SESSION_ID").expect("SESSION_ID not set");
+    // let refresh_token = env::var("REFRESH_TOKEN").expect("REFRESH_TOKEN not set");
+    // let session_id = env::var("SESSION_ID").expect("SESSION_ID not set");
 
-    let store = DefaultTokenStore::<provider::Jottacloud>::new(refresh_token, session_id);
+    let username = env::var("USERNAME").unwrap();
+    let password = env::var("PASSWORD").unwrap();
+
+    let store = LegacyTokenStore::try_from_username_password(&username, &password)
+        .await
+        .unwrap();
 
     let fs = Fs::new(store);
     let ctx = Context::new(fs, Config::new("s3-test"));

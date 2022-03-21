@@ -142,12 +142,13 @@ pub struct AccountInfo {
 ///
 /// - network error
 /// - jottacloud error
-pub async fn get_account(client: &Client, token: &AccessToken) -> crate::Result<AccountInfo> {
+pub async fn get_account(
+    client: &Client,
+    username: &str,
+    token: &AccessToken,
+) -> crate::Result<AccountInfo> {
     let res = client
-        .get(format!(
-            "https://jfs.jottacloud.com/jfs/{}",
-            token.username()
-        ))
+        .get(format!("https://jfs.jottacloud.com/jfs/{}", username))
         .header(header::AUTHORIZATION, format!("Bearer {}", token))
         .send()
         .await?;
@@ -183,6 +184,7 @@ pub struct MountPoint {
 /// - no device found with that name
 pub async fn list_mountpoints(
     client: &Client,
+    username: &str,
     token: &AccessToken,
     device_name: &str,
 ) -> crate::Result<Vec<MountPoint>> {
@@ -201,8 +203,7 @@ pub async fn list_mountpoints(
     let res = client
         .get(format!(
             "https://jfs.jottacloud.com/jfs/{}/{}",
-            token.username(),
-            device_name,
+            username, device_name,
         ))
         .header(header::AUTHORIZATION, format!("Bearer {}", token))
         .send()

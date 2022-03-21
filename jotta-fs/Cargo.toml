@@ -33,6 +33,6 @@ strum = { version = "0.24.0", features = ["derive"] }
 thiserror = "1.0.30"
 tracing = "0.1.31"
 url = "2.2.2"
-uuid = { version = "0.8.2", features = ["serde"] }
+uuid = { version = "0.8.2", features = ["serde", "v4"] }
 
 [features]

@@ -1,10 +1,11 @@
 use actix_web::{
+    dev,
     http::{
         header::{self, ContentType},
         StatusCode,
     },
     web::{self, Data, Json, Path, Payload, Query, ServiceConfig},
-    HttpMessage, HttpRequest, HttpResponse, HttpResponseBuilder,
+    FromRequest, HttpMessage, HttpRequest, HttpResponse, HttpResponseBuilder,
 };
 
 use futures_util::{io::BufReader, TryStreamExt};
@@ -20,7 +21,6 @@ use jotta::{
     Context,
 };
 use jotta_fs::range::ClosedByteRange;
-use mime::Mime;
 use serde::{Deserialize, Serialize};
 use serde_with::{serde_as, DisplayFromStr};
 
@@ -70,17 +70,10 @@ pub async fn post(
     ctx: Data<Context>,
     path: Path<ObjectPath>,
     params: Query<PostParameters>,
-    data: Payload,
+    payload: Payload,
     req: HttpRequest,
 ) -> AppResult<HttpResponse> {
-    let content_type = req.content_type();
-
-    let content_type = if content_type.is_empty() {
-        None
-    } else {
-        let mime: Mime = content_type.parse()?;
-        Some(jotta::object::meta::ContentType(mime))
-    };
+    let content_type = req.mime_type()?.map(jotta::object::meta::ContentType);
 
     match params.upload_type {
         UploadType::Media => {
@@ -91,7 +84,7 @@ pub async fn post(
 
             let _meta = create_object(&ctx, &path.bucket, &path.object, meta).await?;
 
-            let reader = data
+            let reader = payload
                 .map_err(|r| IoError::new(IoErrorKind::Other, r))
                 .into_async_read();
 
@@ -114,19 +107,42 @@ pub async fn post(
             Ok(res.content_type(ContentType::json()).json(meta))
         }
         UploadType::Multipart => todo!(),
-        UploadType::Resumable => todo!(),
+        UploadType::Resumable => {
+            let meta = if content_type.is_some() {
+                Json::<Patch>::from_request(
+                    &req,
+                    &mut dev::Payload::Stream {
+                        payload: Box::pin(payload),
+                    },
+                )
+                .await?
+                .into_inner()
+            } else {
+                Default::default()
+            };
+
+            let _meta = create_object(&ctx, &path.bucket, &path.object, meta).await?;
+
+            let mut res = HttpResponse::Created();
+
+            res.append_header((
+                header::LOCATION,
+                "https://www.youtube.com/watch?v=dQw4w9WgXcQ", // should be an actual upload url
+            ));
+
+            Ok(res.body("TODO"))
+        }
     }
 }
 
 pub async fn head(ctx: Data<Context>, path: Path<ObjectPath>) -> AppResult<HttpResponse> {
     let mut res = HttpResponse::Ok();
 
-    append_object_headers(
-        &mut res,
-        &jotta::object::meta::get(&ctx, &path.bucket, &path.object).await?,
-    );
+    let meta = jotta::object::meta::get(&ctx, &path.bucket, &path.object).await?;
 
-    Ok(res.body(""))
+    append_object_headers(&mut res, &meta);
+
+    Ok(res.no_chunking(meta.size).finish())
 }
 
 #[derive(Debug, Deserialize)]
