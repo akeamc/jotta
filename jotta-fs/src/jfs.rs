@@ -306,6 +306,26 @@ pub struct Folder {
     pub deleted: Option<DateTime<Utc>>,
 }
 
+impl Folder {
+    /// Check if the folder is deleted.
+    ///
+    /// ```
+    /// # use jotta_fs::jfs::Folder;
+    /// use chrono::Utc;
+    ///
+    /// let folder = Folder {
+    ///     name: "My folder".into(),
+    ///     deleted: Some(Utc::now()),
+    /// };
+    ///
+    /// assert!(folder.is_deleted());
+    /// ```
+    #[must_use]
+    pub fn is_deleted(&self) -> bool {
+        self.deleted.is_some()
+    }
+}
+
 impl From<FolderDetail> for Folder {
     fn from(f: FolderDetail) -> Self {
         Self {
@@ -384,7 +404,7 @@ pub struct FileDetail {
 
     /// The upcoming revision.
     ///
-    /// Probably never has a `state` of [`Completed`](RevisionState::Completed).
+    /// Probably never has a `state` of `Completed`.
     pub latest_revision: Option<Revision>,
     /// The optional current revision, which always should have a state of `Completed`.
     pub current_revision: Option<Revision>,

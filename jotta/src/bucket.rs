@@ -31,16 +31,20 @@ impl<F: Into<Folder>> From<F> for Bucket {
 /// Errors if something goes wrong with the underlying Jotta Filesystem.
 #[instrument(skip(ctx))]
 pub async fn list(ctx: &Context) -> crate::Result<Vec<Bucket>> {
-    let folders = ctx
+    let index = ctx
         .fs
         .index(&UserScopedPath(ctx.user_scoped_root()))
-        .await?
-        .folders
-        .inner;
+        .await?;
+
+    let folders = index.folders.inner;
 
     debug!("listed {} folders", folders.len());
 
-    let buckets = folders.into_iter().map(Into::into).collect::<Vec<_>>();
+    let buckets = folders
+        .into_iter()
+        .filter(|f| !f.is_deleted())
+        .map(Into::into)
+        .collect::<Vec<_>>();
 
     Ok(buckets)
 }
