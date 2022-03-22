@@ -1,41 +1,11 @@
 //! A bucket contains one or more objects.
-use std::{fmt::Debug, str::FromStr};
+use std::fmt::Debug;
 
-use crate::Context;
-use derive_more::{AsRef, Deref, DerefMut, Display};
-use jotta_fs::path::UserScopedPath;
+use crate::{path::BucketName, Context};
+
+use jotta_fs::{jfs::Folder, path::UserScopedPath};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, instrument};
-
-/// A bucket name.
-#[derive(
-    Debug,
-    Serialize,
-    Deserialize,
-    Clone,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Deref,
-    DerefMut,
-    AsRef,
-    Display,
-)]
-#[allow(clippy::module_name_repetitions)]
-pub struct BucketName(String);
-
-/// Invalid bucket name.
-#[derive(Debug, thiserror::Error)]
-pub enum InvalidBucketName {}
-
-impl FromStr for BucketName {
-    type Err = InvalidBucketName;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(Self(s.to_owned()))
-    }
-}
 
 /// A bucket contains one or more objects.
 #[derive(Debug, Serialize, Deserialize)]
@@ -44,13 +14,23 @@ pub struct Bucket {
     pub name: BucketName,
 }
 
+impl<F: Into<Folder>> From<F> for Bucket {
+    fn from(f: F) -> Self {
+        let f: Folder = f.into();
+
+        Self {
+            name: BucketName(f.name),
+        }
+    }
+}
+
 /// List all buckets.
 ///
 /// # Errors
 ///
 /// Errors if something goes wrong with the underlying Jotta Filesystem.
 #[instrument(skip(ctx))]
-pub async fn list_buckets(ctx: &Context) -> crate::Result<Vec<Bucket>> {
+pub async fn list(ctx: &Context) -> crate::Result<Vec<Bucket>> {
     let folders = ctx
         .fs
         .index(&UserScopedPath(ctx.user_scoped_root()))
@@ -60,29 +40,40 @@ pub async fn list_buckets(ctx: &Context) -> crate::Result<Vec<Bucket>> {
 
     debug!("listed {} folders", folders.len());
 
-    let buckets = folders
-        .into_iter()
-        .map(|f| Bucket {
-            name: BucketName(f.name),
-        })
-        .collect::<Vec<_>>();
+    let buckets = folders.into_iter().map(Into::into).collect::<Vec<_>>();
 
     Ok(buckets)
 }
 
-#[instrument(skip(ctx))]
-/// Get details about a bucket by name.
-pub async fn get_bucket(ctx: &Context, bucket: &BucketName) -> crate::Result<Bucket> {
+/// Create a new bucket.
+///
+/// # Errors
+///
+/// Your usual Jottacloud errors may happen, though.
+pub async fn create(ctx: &Context, bucket: &BucketName) -> crate::Result<Bucket> {
     let folder = ctx
         .fs
-        .index(&UserScopedPath(format!(
+        .create_folder(&UserScopedPath(format!(
             "{}/{}",
             ctx.user_scoped_root(),
             bucket
         )))
         .await?;
 
-    Ok(Bucket {
-        name: BucketName(folder.name),
-    })
+    Ok(folder.into())
+}
+
+#[instrument(skip(ctx))]
+/// Get details about a bucket by name.
+pub async fn get(ctx: &Context, bucket: &BucketName) -> crate::Result<Bucket> {
+    let folder = ctx
+        .fs
+        .index(&UserScopedPath(format!(
+            "{}/{}",
+            ctx.user_scoped_root(),
+            bucket,
+        )))
+        .await?;
+
+    Ok(folder.into())
 }

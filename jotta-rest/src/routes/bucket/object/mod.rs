@@ -12,17 +12,17 @@ use futures_util::{io::BufReader, TryStreamExt};
 use http_range::HttpRange;
 use httpdate::fmt_http_date;
 use jotta::{
-    bucket::BucketName,
     object::{
         create_object,
         meta::{Meta, Patch},
-        upload_range, ObjectName,
+        upload_range,
     },
+    path::{BucketName, ObjectName},
     Context,
 };
 use jotta_fs::range::ClosedByteRange;
 use serde::{Deserialize, Serialize};
-use serde_with::{serde_as, DisplayFromStr};
+use serde_with::serde_as;
 
 use std::io::{Error as IoError, ErrorKind as IoErrorKind};
 
@@ -31,9 +31,7 @@ use crate::{errors::AppError, AppConfig, AppResult};
 #[serde_as]
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ObjectPath {
-    #[serde_as(as = "DisplayFromStr")]
     bucket: BucketName,
-    #[serde_as(as = "DisplayFromStr")]
     object: ObjectName,
 }
 

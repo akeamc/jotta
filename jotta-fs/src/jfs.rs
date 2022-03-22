@@ -306,6 +306,15 @@ pub struct Folder {
     pub deleted: Option<DateTime<Utc>>,
 }
 
+impl From<FolderDetail> for Folder {
+    fn from(f: FolderDetail) -> Self {
+        Self {
+            name: f.name,
+            deleted: None,
+        }
+    }
+}
+
 /// Folders wrapper.
 #[derive(Debug, Deserialize, Default)]
 pub struct Folders {

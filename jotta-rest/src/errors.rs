@@ -37,12 +37,15 @@ impl From<jotta::errors::Error> for AppError {
                 jotta_fs::Error::TokenRenewalFailed => Self::InternalError,
                 jotta_fs::Error::RangeNotSatisfiable => Self::InternalError,
             },
-            jotta::errors::Error::InvalidObjectName(o) => Self::InvalidInput {
-                message: o.to_string(),
+            jotta::errors::Error::ParseObjectName(e) => Self::InvalidInput {
+                message: e.to_string(),
             },
             jotta::errors::Error::MsgpackEncode(_) => Self::InternalError,
             jotta::errors::Error::MsgpackDecode(_) => Self::InternalError,
             jotta::errors::Error::IoError(_) => Self::InternalError,
+            jotta::errors::Error::ParseBucketName(e) => Self::InvalidInput {
+                message: e.to_string(),
+            },
         }
     }
 }

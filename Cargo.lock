@@ -885,6 +885,8 @@ dependencies = [
  "jotta-fs",
  "md5",
  "mime",
+ "once_cell",
+ "regex",
  "rmp-serde",
  "serde",
  "serde_json",

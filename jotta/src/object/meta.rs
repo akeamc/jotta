@@ -11,8 +11,8 @@ use serde::{Deserialize, Serialize};
 use serde_with::{serde_as, DisplayFromStr};
 use tracing::{error, instrument, warn};
 
-use crate::{bucket::BucketName, Context};
 use crate::{errors::Error, serde::NullAsDefault};
+use crate::{path::BucketName, Context};
 
 use super::ObjectName;
 
@@ -76,7 +76,7 @@ impl Meta {
 pub(crate) async fn set_raw(
     ctx: &Context,
     bucket: &BucketName,
-    name: &ObjectName,
+    object: &ObjectName,
     meta: &Meta,
     conflict_handler: ConflictHandler,
 ) -> crate::Result<()> {
@@ -85,9 +85,10 @@ pub(crate) async fn set_raw(
 
     let req = AllocReq {
         path: &PathOnDevice(format!(
-            "{}/{bucket}/{}/meta",
+            "{}/{}/{}/meta",
             ctx.root_on_device(),
-            name.to_hex()
+            bucket,
+            object.to_hex()
         )),
         bytes,
         md5: md5::compute(&body),
@@ -166,17 +167,24 @@ impl From<Meta> for Patch {
 pub async fn patch(
     ctx: &Context,
     bucket: &BucketName,
-    name: &ObjectName,
+    object: &ObjectName,
     patch: Patch,
 ) -> crate::Result<Meta> {
-    let mut meta = get(ctx, bucket, name).await?;
+    let mut meta = get(ctx, bucket, object).await?;
 
     if !patch.is_empty() {
         meta.patch(patch);
 
         meta.updated = Utc::now();
 
-        set_raw(ctx, bucket, name, &meta, ConflictHandler::CreateNewRevision).await?;
+        set_raw(
+            ctx,
+            bucket,
+            object,
+            &meta,
+            ConflictHandler::CreateNewRevision,
+        )
+        .await?;
     }
 
     Ok(meta)
@@ -189,8 +197,9 @@ pub async fn get(ctx: &Context, bucket: &BucketName, name: &ObjectName) -> crate
         .fs
         .file_to_bytes(
             &UserScopedPath(format!(
-                "{}/{bucket}/{}/meta",
+                "{}/{}/{}/meta",
                 ctx.user_scoped_root(),
+                bucket,
                 name.to_hex()
             )),
             OpenByteRange::full(),

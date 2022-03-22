@@ -3,12 +3,16 @@
 //!
 //! - A `meta` file with metadata about the object.
 //! - One or more binary data chunks.
-use std::{fmt::Debug, iter, str::FromStr, string::FromUtf8Error, sync::Arc, time::Instant};
+use std::{iter, sync::Arc, time::Instant};
 
-use crate::{bucket::BucketName, object::meta::get, Context};
+use crate::{
+    object::meta::get,
+    path::{BucketName, ObjectName},
+    Context,
+};
 use bytes::{Bytes, BytesMut};
 use chrono::Utc;
-use derive_more::{AsRef, Deref, DerefMut, Display};
+
 use futures_util::{
     stream::{self},
     AsyncBufRead, AsyncReadExt, Stream, StreamExt, TryStreamExt,
@@ -19,8 +23,8 @@ use jotta_fs::{
     path::{PathOnDevice, UserScopedPath},
     range::{ByteRange, ClosedByteRange, OpenByteRange},
 };
-use serde::{Deserialize, Serialize};
-use tracing::{debug, error, instrument, trace, warn};
+
+use tracing::{debug, instrument, trace, warn};
 
 use self::meta::{set_raw, Meta, Patch};
 
@@ -36,105 +40,6 @@ pub mod meta;
 /// for each chunk.
 pub const CHUNK_SIZE: usize = 1 << 20;
 
-/// A human-readable object name.
-///
-/// ```
-/// use jotta::object::ObjectName;
-/// use std::str::FromStr;
-///
-/// assert!(ObjectName::from_str("").is_err());
-/// assert!(ObjectName::from_str("hello\nworld").is_err());
-/// assert!(ObjectName::from_str("bye\r\nlword").is_err());
-/// ```
-#[derive(
-    Debug,
-    Serialize,
-    Deserialize,
-    Clone,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Deref,
-    DerefMut,
-    AsRef,
-    Display,
-)]
-#[allow(clippy::module_name_repetitions)]
-pub struct ObjectName(String);
-
-impl ObjectName {
-    /// Convert the name into hexadecimal.
-    ///
-    /// ```
-    /// use jotta::object::ObjectName;
-    /// use std::str::FromStr;
-    ///
-    /// let name = ObjectName::from_str("cat.jpeg").unwrap();
-    ///
-    /// assert_eq!(name.to_hex(), "6361742e6a706567");
-    /// ```
-    #[must_use]
-    pub fn to_hex(&self) -> String {
-        hex::encode(&self.0)
-    }
-
-    /// Convert a hexadecimal string to an [`ObjectName`].
-    ///
-    /// # Errors
-    ///
-    /// Errors if the hexadecimal value cannot be parsed. It is not
-    /// as restrictive as the [`FromStr`] implementation.
-    pub fn try_from_hex(hex: &str) -> Result<Self, InvalidObjectName> {
-        let bytes = hex::decode(hex)?;
-        let text = String::from_utf8(bytes)?;
-        Ok(Self(text))
-    }
-
-    fn chunk_path(&self, index: u32) -> String {
-        format!("{}/{}", self.to_hex(), index)
-    }
-}
-
-impl FromStr for ObjectName {
-    type Err = InvalidObjectName;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if !(1..=1024).contains(&s.len()) {
-            return Err(InvalidObjectName::InvalidLength);
-        }
-
-        for c in s.chars() {
-            if c.is_ascii_control() {
-                return Err(InvalidObjectName::IllegalChar(c));
-            }
-        }
-
-        Ok(Self(s.into()))
-    }
-}
-
-/// Object name parse errors.
-#[derive(Debug, thiserror::Error)]
-pub enum InvalidObjectName {
-    /// Hexadecimal parse error.
-    #[error("invalid hex: {0}")]
-    InvalidHex(#[from] hex::FromHexError),
-
-    /// Invalid unicode.
-    #[error("invalid utf-8: {0}")]
-    InvalidUtf8(#[from] FromUtf8Error),
-
-    /// Some characters, such as the newline (`\n`), are banned from usage in
-    /// object names.
-    #[error("invalid character: `{0}`")]
-    IllegalChar(char),
-
-    /// The object name must be between 1 and 1024 characters long.
-    #[error("invalid name length")]
-    InvalidLength,
-}
-
 /// List all objects in a bucket.
 ///
 /// # Errors
@@ -145,8 +50,9 @@ pub async fn list_objects(ctx: &Context, bucket: &BucketName) -> crate::Result<V
     let folders = ctx
         .fs
         .index(&UserScopedPath(format!(
-            "{}/{bucket}",
-            ctx.user_scoped_root()
+            "{}/{}",
+            ctx.user_scoped_root(),
+            bucket,
         )))
         .await?
         .folders
@@ -154,7 +60,11 @@ pub async fn list_objects(ctx: &Context, bucket: &BucketName) -> crate::Result<V
 
     folders
         .into_iter()
-        .map(|f| ObjectName::try_from_hex(&f.name).map_err(Into::into))
+        .map(|f| {
+            ObjectName::try_from_hex(&f.name)
+                .map(Into::into)
+                .map_err(Into::into)
+        })
         .collect::<crate::Result<Vec<_>>>()
 }
 
@@ -181,11 +91,11 @@ pub async fn create_object(
     Ok(meta)
 }
 
-#[instrument(level = "trace", skip(ctx, bucket, name, body))]
+#[instrument(level = "trace", skip(ctx, bucket, object, body))]
 async fn upload_chunk(
     ctx: &Context,
     bucket: &BucketName,
-    name: &ObjectName,
+    object: &ObjectName,
     index: u32,
     body: Bytes, // there is no point accepting a stream since a checksum needs to be calculated prior to allocation anyway
 ) -> crate::Result<u64> {
@@ -196,9 +106,10 @@ async fn upload_chunk(
 
     let req = AllocReq {
         path: &PathOnDevice(format!(
-            "{}/{bucket}/{}",
+            "{}/{}/{}",
             ctx.root_on_device(),
-            name.chunk_path(index)
+            bucket,
+            object.chunk_path(index)
         )),
         bytes: size,
         md5,
@@ -219,16 +130,17 @@ async fn upload_chunk(
 async fn get_complete_chunk<R: AsyncBufRead + Unpin>(
     ctx: &Context,
     bucket: &BucketName,
-    name: &ObjectName,
+    object: &ObjectName,
     mut cursor: usize,
     chunk_no: u32,
     file: &mut R,
 ) -> crate::Result<Option<Bytes>> {
     let mut buf = BytesMut::with_capacity(CHUNK_SIZE);
     let chunk_path = &UserScopedPath(format!(
-        "{}/{bucket}/{}",
+        "{}/{}/{}",
         ctx.user_scoped_root(),
-        name.chunk_path(chunk_no)
+        bucket,
+        object.chunk_path(chunk_no)
     ));
 
     if cursor != 0 {
@@ -420,14 +332,15 @@ pub fn stream_range<'a>(
 pub async fn delete_object(
     ctx: &Context,
     bucket: &BucketName,
-    name: &ObjectName,
+    object: &ObjectName,
 ) -> crate::Result<()> {
     let _res = ctx
         .fs
-        .delete_folder(&UserScopedPath(format!(
-            "{}/{bucket}/{}",
+        .remove_folder(&UserScopedPath(format!(
+            "{}/{}/{}",
             ctx.user_scoped_root(),
-            name.to_hex()
+            bucket,
+            object.to_hex()
         )))
         .await?;
 

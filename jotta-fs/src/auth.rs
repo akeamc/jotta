@@ -70,11 +70,14 @@ impl TokenResponse {
 }
 
 impl LegacyTokenStore {
-    async fn register_device(client: &Client) -> crate::Result<DeviceRegistration> {
+    async fn register_device(
+        client: &Client,
+        device_id: impl Serialize,
+    ) -> crate::Result<DeviceRegistration> {
         let res = client
             .post("https://api.jottacloud.com/auth/v1/register")
             .bearer_auth("c2xrZmpoYWRsZmFramhkc2xma2phaHNkbGZramhhc2xkZmtqaGFzZGxrZmpobGtq")
-            .form(&[("device_id", Uuid::new_v4())])
+            .form(&[("device_id", device_id)])
             .send()
             .await?;
 
@@ -107,7 +110,7 @@ impl LegacyTokenStore {
         let DeviceRegistration {
             client_id,
             client_secret,
-        } = Self::register_device(&client).await?;
+        } = Self::register_device(&client, Uuid::new_v4()).await?;
 
         let resp = Self::manage_token(
             &client,

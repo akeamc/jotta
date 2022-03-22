@@ -173,19 +173,37 @@ impl Fs {
         read_xml(res).await
     }
 
-    /// **Permanently** delete a folder. It must be a folder. It fails if you try to
+    /// **Permanently** removes a folder. It must be a folder. It fails if you try to
     /// delete a single file.
     ///
     /// # Errors
     ///
     /// - your usual Jottacloud errors
-    /// - trying to delete a file instead of a folder
-    pub async fn delete_folder(&self, path: &UserScopedPath) -> crate::Result<FolderDetail> {
+    /// - trying to remove a file instead of a folder
+    pub async fn remove_folder(&self, path: &UserScopedPath) -> crate::Result<FolderDetail> {
         let res = self
             .jfs_req(Method::POST, path)
             .await?
             // switching this to ?dlDir=true will move the folder to trash instead of irreversibly deleting
             .query(&[("rmDir", "true")])
+            .send()
+            .await?;
+
+        read_xml(res).await
+    }
+
+    /// Create a new folder.
+    ///
+    /// # Errors
+    ///
+    /// This does NOT return an error if a folder already exists.
+    /// Therefore, it's more similar `mkdir -p`. It can, however,
+    /// fail due to underlying Jottacloud errors.
+    pub async fn create_folder(&self, path: &UserScopedPath) -> crate::Result<FolderDetail> {
+        let res = self
+            .jfs_req(Method::POST, path)
+            .await?
+            .query(&[("mkDir", "true")])
             .send()
             .await?;
 
