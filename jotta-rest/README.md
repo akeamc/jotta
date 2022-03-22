@@ -54,7 +54,7 @@ GET /b/{bucket}/o/{object}
       <td>
         What type of data to return. May be:
         <ul>
-          <li><code>json</code>: Return object metadata.</li>
+          <li><code>json</code> (default): Return object metadata.</li>
           <li><code>media</code>: Return object data.</li>
         </ul>
       </td>
