@@ -22,6 +22,14 @@ GET /b
 GET /b/{bucket}
 ```
 
+### Deleting a bucket
+
+```
+DELETE /b/{bucket}
+```
+
+The bucket is deleted irreversibly.
+
 ### Objects
 
 #### Listing objects in a bucket
@@ -36,7 +44,7 @@ GET /b/{bucket}/o
 GET /b/{bucket}/o/{object}
 ```
 
-<table class="matchpre" id="request_parameters">
+<table>
   <thead>
     <tr>
       <th>Parameter name</th>

@@ -46,7 +46,7 @@ pub const CHUNK_SIZE: usize = 1 << 20;
 ///
 /// Returns an error if there is no bucket with the specified name.
 #[instrument(skip(ctx))]
-pub async fn list_objects(ctx: &Context, bucket: &BucketName) -> crate::Result<Vec<ObjectName>> {
+pub async fn list(ctx: &Context, bucket: &BucketName) -> crate::Result<Vec<ObjectName>> {
     let folders = ctx
         .fs
         .index(&UserScopedPath(format!(
@@ -70,7 +70,7 @@ pub async fn list_objects(ctx: &Context, bucket: &BucketName) -> crate::Result<V
 
 /// Create an object. This does not upload any actual binary data, only metadata.
 #[instrument(skip(ctx))]
-pub async fn create_object(
+pub async fn create(
     ctx: &Context,
     bucket: &BucketName,
     name: &ObjectName,
@@ -92,7 +92,7 @@ pub async fn create_object(
 }
 
 #[instrument(level = "trace", skip(ctx, bucket, object, body))]
-async fn upload_chunk(
+async fn upload(
     ctx: &Context,
     bucket: &BucketName,
     object: &ObjectName,
@@ -227,7 +227,7 @@ pub async fn upload_range<R: AsyncBufRead + Unpin>(
 
     let mut futs = Box::pin(
         chunks
-            .map(|res| res.map(|(chunk_no, buf)| upload_chunk(ctx, bucket, name, chunk_no, buf)))
+            .map(|res| res.map(|(chunk_no, buf)| upload(ctx, bucket, name, chunk_no, buf)))
             .try_buffer_unordered(num_connections),
     );
 
@@ -329,11 +329,7 @@ pub fn stream_range<'a>(
 
 /// Delete an object.
 #[instrument(skip(ctx))]
-pub async fn delete_object(
-    ctx: &Context,
-    bucket: &BucketName,
-    object: &ObjectName,
-) -> crate::Result<()> {
+pub async fn delete(ctx: &Context, bucket: &BucketName, object: &ObjectName) -> crate::Result<()> {
     let _res = ctx
         .fs
         .remove_folder(&UserScopedPath(format!(

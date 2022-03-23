@@ -13,7 +13,7 @@ use http_range::HttpRange;
 use httpdate::fmt_http_date;
 use jotta::{
     object::{
-        create_object,
+        create,
         meta::{Meta, Patch},
         upload_range,
     },
@@ -36,7 +36,7 @@ pub struct ObjectPath {
 }
 
 pub async fn list(ctx: Data<Context>, bucket: Path<BucketName>) -> AppResult<HttpResponse> {
-    let objects = jotta::object::list_objects(&ctx, &bucket.into_inner()).await?;
+    let objects = jotta::object::list(&ctx, &bucket.into_inner()).await?;
 
     Ok(HttpResponse::Ok().json(objects))
 }
@@ -80,7 +80,7 @@ pub async fn post(
                 cache_control: None,
             };
 
-            let _meta = create_object(&ctx, &path.bucket, &path.object, meta).await?;
+            let _meta = create(&ctx, &path.bucket, &path.object, meta).await?;
 
             let reader = payload
                 .map_err(|r| IoError::new(IoErrorKind::Other, r))
@@ -119,7 +119,7 @@ pub async fn post(
                 Default::default()
             };
 
-            let _meta = create_object(&ctx, &path.bucket, &path.object, meta).await?;
+            let _meta = create(&ctx, &path.bucket, &path.object, meta).await?;
 
             let mut res = HttpResponse::Created();
 
@@ -228,7 +228,7 @@ pub async fn patch(
 }
 
 pub async fn delete(ctx: Data<Context>, path: Path<ObjectPath>) -> AppResult<HttpResponse> {
-    jotta::object::delete_object(&ctx, &path.bucket, &path.object).await?;
+    jotta::object::delete(&ctx, &path.bucket, &path.object).await?;
 
     Ok(HttpResponse::NoContent().body(""))
 }

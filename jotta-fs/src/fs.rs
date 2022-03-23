@@ -66,13 +66,11 @@ impl Fs {
         static JFS_BASE: Lazy<Url> =
             Lazy::new(|| Url::parse("https://jfs.jottacloud.com/jfs/").unwrap());
 
-        let access_token = self.token_store.get_access_token(&self.client).await?;
-
         let url = JFS_BASE
             .join(&format!("{}/", self.token_store.username()))?
             .join(path)?;
 
-        Ok(self.client.request(method, url).bearer_auth(access_token))
+        self.authed_req(method, url).await
     }
 
     async fn files_v1_req_builder(

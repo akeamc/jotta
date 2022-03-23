@@ -67,8 +67,8 @@ pub async fn create(ctx: &Context, bucket: &BucketName) -> crate::Result<Bucket>
     Ok(folder.into())
 }
 
-#[instrument(skip(ctx))]
 /// Get details about a bucket by name.
+#[instrument(skip(ctx))]
 pub async fn get(ctx: &Context, bucket: &BucketName) -> crate::Result<Bucket> {
     let folder = ctx
         .fs
@@ -80,4 +80,23 @@ pub async fn get(ctx: &Context, bucket: &BucketName) -> crate::Result<Bucket> {
         .await?;
 
     Ok(folder.into())
+}
+
+/// Delete a bucket.
+///
+/// # Errors
+///
+/// Your usual Jottacloud errors.
+#[instrument(skip(ctx))]
+pub async fn delete(ctx: &Context, bucket: &BucketName) -> crate::Result<()> {
+    let _res = ctx
+        .fs
+        .remove_folder(&UserScopedPath(format!(
+            "{}/{}",
+            ctx.user_scoped_root(),
+            bucket
+        )))
+        .await?;
+
+    Ok(())
 }
