@@ -9,6 +9,8 @@
 pub mod api;
 pub mod auth;
 pub mod errors;
+#[cfg(feature = "events")]
+pub mod events;
 pub mod files;
 mod fs;
 pub mod jfs;

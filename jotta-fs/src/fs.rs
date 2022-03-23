@@ -52,7 +52,17 @@ impl Fs {
         }
     }
 
-    async fn authed_req(&self, method: Method, url: impl IntoUrl) -> crate::Result<RequestBuilder> {
+    /// Get the username of the currently authenticated user.
+    #[must_use]
+    pub fn username(&self) -> &str {
+        self.token_store.username()
+    }
+
+    pub(crate) async fn authed_req(
+        &self,
+        method: Method,
+        url: impl IntoUrl,
+    ) -> crate::Result<RequestBuilder> {
         let access_token = self.token_store.get_access_token(&self.client).await?;
 
         Ok(self.client.request(method, url).bearer_auth(access_token))
