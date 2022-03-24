@@ -54,6 +54,10 @@ pub enum Error {
     /// Range not satisfiable.
     #[error("range not satisfiable")]
     RangeNotSatisfiable,
+
+    /// Events error.
+    #[error("{0}")]
+    EventError(#[from] crate::events::Error),
 }
 
 /// All possible errors returned by the upstream Jottacloud API.

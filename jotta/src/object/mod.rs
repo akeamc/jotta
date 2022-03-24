@@ -180,8 +180,6 @@ async fn get_complete_chunk<R: AsyncBufRead + Unpin>(
         // If the case is the latter, we need to download the tail of this chunk in order not to
         // accidentally truncate the file.
 
-        println!("we need tail");
-
         let tail = match ctx
             .fs
             .file_to_bytes(chunk_path, OpenByteRange::new(cursor as u64))

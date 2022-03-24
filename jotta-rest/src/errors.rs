@@ -36,6 +36,7 @@ impl From<jotta::errors::Error> for AppError {
                 jotta_fs::Error::CorruptUpload => Self::InternalError,
                 jotta_fs::Error::TokenRenewalFailed => Self::InternalError,
                 jotta_fs::Error::RangeNotSatisfiable => Self::InternalError,
+                jotta_fs::Error::EventError(_) => Self::InternalError,
             },
             jotta::errors::Error::ParseObjectName(e) => Self::InvalidInput {
                 message: e.to_string(),

@@ -8,16 +8,26 @@
 //! A somewhat outdated (but nonetheless very helpful) mapping of the API has
 //! been written by [ttyridal](https://github.com/ttyridal):
 //! [Jotta protocol](https://github.com/ttyridal/jottalib/wiki/Jotta-protocol).
+//!
+//! I initially tried to cover all events (including file sharing, photo albums
+//! and such) but realized that there are too many events and most of them will
+//! probably never be used (open an issue otherwise). So, only basic filesystem
+//! operations are covered by this API. Other events *will* yield a stream item,
+//! but the item will be an `Err(..)` unless I screwed up real bad.
 
 use std::str::FromStr;
 
-use crate::serde::OptTypoDateTime;
+use crate::{serde::OptTypoDateTime, USER_AGENT};
 use chrono::{DateTime, Utc};
-use futures::{Future, SinkExt, StreamExt};
+use futures::{future, Sink, SinkExt, Stream, StreamExt};
 use reqwest::{Method, Url};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
-use tokio_tungstenite::{connect_async, tungstenite::Message};
+use tokio_tungstenite::{
+    connect_async,
+    tungstenite::{self, Message},
+};
+use tracing::trace;
 use uuid::Uuid;
 
 use crate::{api::read_xml, path::AbsolutePath, Fs};
@@ -50,25 +60,25 @@ async fn create_ws_token(fs: &Fs) -> crate::Result<String> {
 /// A message sent from the client to the server.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum ClientMessage<'a> {
+pub enum ClientMessage {
     /// Subscribe to events.
     Subscribe {
         /// Path to watch. `"ALL"` watches all paths.
-        path: &'a str,
+        path: String,
 
         /// User agent.
         #[serde(rename = "UA")]
-        user_agent: &'a str,
+        user_agent: String,
     },
 
     /// Send a ping to keep the connection open.
     Ping,
 }
 
-impl<'a> TryFrom<ClientMessage<'a>> for Message {
+impl TryFrom<ClientMessage> for Message {
     type Error = serde_json::Error;
 
-    fn try_from(value: ClientMessage<'a>) -> Result<Self, Self::Error> {
+    fn try_from(value: ClientMessage) -> Result<Self, Self::Error> {
         serde_json::to_string(&value).map(Message::text)
     }
 }
@@ -100,6 +110,10 @@ pub struct WsFile {
     /// Path.
     #[serde(rename = "FROM")]
     pub from: AbsolutePath,
+
+    /// Destination (only used for events such as `"MOVE"`).
+    #[serde(rename = "TO")]
+    pub to: Option<AbsolutePath>,
 
     /// Device that triggered this event.
     pub actor_device: String,
@@ -139,42 +153,53 @@ pub struct WsFile {
     pub updated: Option<DateTime<Utc>>,
 }
 
-/// A photo.
-#[serde_as]
-#[derive(Debug, Deserialize, PartialEq, Eq)]
-pub struct WsPhoto {
-    /// Capture date.
-    #[serde_as(as = "serde_with::TimestampNanoSeconds")]
-    pub captured_date: DateTime<Utc>,
+/// A directory.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WsDir {
+    /// Path.
+    #[serde(rename = "FROM")]
+    pub from: AbsolutePath,
 
-    /// MD5 digest.
-    #[serde(with = "crate::serde::md5_hex")]
-    pub md5: md5::Digest,
+    /// No idea what this is.
+    pub actor_device: String,
 
-    /// Id of the photo (unknown format).
-    pub photo_id: String,
-
-    /// UUID of the photo.
+    /// Uuid.
     pub uuid: Uuid,
 }
 
 /// An event that happened in the cloud.
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-#[serde(tag = "ST", content = "D")]
+#[serde(tag = "ST", content = "D", rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ServerEvent {
+    /// (Hopefully) returned by [`ClientMessage::Ping`].
+    Pong(String),
+
     /// New file uploaded.
     NewUpload(WsFile),
 
     /// File deleted.
     Delete(WsFile),
 
-    /// (Hopefully) returned by [`ClientMessage::Ping`].
-    Pong(String),
-    #[serde(rename = "PhotoAdded")]
+    /// File restored.
+    Restore(WsFile),
 
-    /// Photo added.
-    PhotoAdded(WsPhoto),
+    /// File was moved.
+    Move(WsFile),
+
+    /// Create directory.
+    CreateDir(WsDir),
+
+    /// Permanently delete a directory.
+    HardDeleteDir(WsDir),
+}
+
+/// Server event kinds.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum EventKind {
+    /// File-related events are named `"PATH"` for some reason.
+    Path,
 }
 
 /// A message sent by the server to the client (us).
@@ -189,12 +214,16 @@ pub enum ServerMessage {
         path: String,
 
         /// Last file that was uploaded, deleted, etc.
-        last_uuid: String,
+        last_uuid: Uuid,
     },
-    #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 
     /// An event.
+    #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
     Event {
+        /// What kind of event.
+        #[serde(rename = "T")]
+        kind: EventKind,
+
         /// Timestamp of the event.
         #[serde_as(as = "serde_with::TimestampMilliSeconds")]
         ts: DateTime<Utc>,
@@ -218,7 +247,7 @@ impl TryFrom<Message> for ServerMessage {
 
     fn try_from(value: Message) -> Result<Self, Self::Error> {
         if let Message::Text(json) = value {
-            println!("{}", json);
+            trace!("{}", json);
 
             Self::from_str(&json).map_err(Into::into)
         } else {
@@ -239,70 +268,79 @@ pub enum ParseServerMessageError {
     WrongType,
 }
 
-pub fn subscribe<'a>(fs: &'a Fs) -> impl Future<Output = crate::Result<()>> + 'a {
-    async {
-        let token = create_ws_token(fs).await?;
+/// Event error.
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    /// The message could not be parsed.
+    #[error("message could not be parsed: {0}")]
+    ParseMessageError(#[from] ParseServerMessageError),
 
-        let (mut stream, _) = connect_async(Url::parse(&format!(
-            "wss://websocket.jottacloud.com/ws/{}/{}",
-            fs.username(),
-            token
-        ))?)
-        .await
-        .unwrap();
+    /// An error occurred with the underlying websocket.
+    #[error("websocket error: {0}")]
+    WsError(#[from] tungstenite::Error),
 
-        stream
-            .send(
-                ClientMessage::Subscribe {
-                    path: "ALL",
-                    user_agent: "Helo",
-                }
-                .try_into()
-                .unwrap(),
-            )
-            .await
-            .unwrap();
+    /// JSON error.
+    #[error("json error: {0}")]
+    JsonError(#[from] serde_json::Error),
+}
 
-        while let Some(msg) = stream.next().await {
-            let msg = ServerMessage::try_from(msg.unwrap()).unwrap();
+/// Subscribe to remote events.
+///
+/// # Errors
+///
+/// Might error due to authentication errors. Also, it is not 100% certain that
+/// we will be able to connect to the websocket.
+pub async fn subscribe(
+    fs: &Fs,
+) -> crate::Result<impl Stream<Item = Result<ServerMessage, Error>> + Sink<ClientMessage>> {
+    let token = create_ws_token(fs).await?;
 
-            dbg!(msg);
-        }
+    let (stream, _) = connect_async(Url::parse(&format!(
+        "wss://websocket.jottacloud.com/ws/{}/{}",
+        fs.username(),
+        token
+    ))?)
+    .await
+    .map_err(Error::from)?;
 
-        todo!();
-    }
+    let mut stream = stream
+        .with::<_, _, _, Error>(|msg: ClientMessage| {
+            future::ready(msg.try_into().map_err(Into::into))
+        })
+        .map::<Result<ServerMessage, Error>, _>(|result| result?.try_into().map_err(Into::into));
+
+    stream
+        .send(ClientMessage::Subscribe {
+            path: "ALL".into(),
+            user_agent: USER_AGENT.into(),
+        })
+        .await?;
+
+    Ok(stream)
 }
 
 #[cfg(test)]
 mod tests {
-    use chrono::{TimeZone, Utc};
-    use hex_literal::hex;
     use std::str::FromStr;
     use uuid::Uuid;
 
     use crate::events::ServerMessage;
 
-    use super::{ServerEvent, WsPhoto};
-
     #[test]
     fn deserialize() {
         let msg = ServerMessage::from_str(
-        r#"{"EVENT":{"U":"69420","A":"69420","T":"PHOTOS","ST":"PhotoAdded","TS":1648065676008,"D":{"captured_date":1646419475030718700,"md5":"a68184e9a6c263e782fbb40f9c3a3873","photo_id":"aaaaaaaaaaa","uuid":"ff5d0c63-aae3-11ec-881d-90e2bae6bf68"},"uuid":"ff5d0c63-aae3-11ec-881d-90e2bae6bf68","unixnano":1648065676.0228963}}"#
-    ).unwrap();
+            r#"{"SUBSCRIBE":{"PATH":"ALL","LAST_UUID":"40660078-abab-11ec-881d-90e2bae6bf68"}}"#,
+        )
+        .unwrap();
 
         match msg {
-            ServerMessage::Event {
-                ts: _,
-                inner: ServerEvent::PhotoAdded(photo),
-            } => assert_eq!(
-                photo,
-                WsPhoto {
-                    captured_date: Utc.timestamp(1646419475, 30718700),
-                    md5: md5::Digest(hex!("a68184e9a6c263e782fbb40f9c3a3873")),
-                    photo_id: "aaaaaaaaaaa".into(),
-                    uuid: Uuid::parse_str("ff5d0c63-aae3-11ec-881d-90e2bae6bf68").unwrap(),
-                }
-            ),
+            ServerMessage::Subscribe { path, last_uuid } => {
+                assert_eq!(path, "ALL");
+                assert_eq!(
+                    last_uuid,
+                    Uuid::parse_str("40660078-abab-11ec-881d-90e2bae6bf68").unwrap()
+                );
+            }
             _ => panic!("wrong type"),
         }
     }
