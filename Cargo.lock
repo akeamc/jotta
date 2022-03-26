@@ -968,7 +968,6 @@ dependencies = [
  "futures-util",
  "http-range",
  "httpdate",
- "jotta",
  "jotta-osd",
  "mime",
  "serde",

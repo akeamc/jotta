@@ -10,14 +10,16 @@ pub mod bucket;
 pub mod errors;
 pub mod object;
 pub mod path;
-pub(crate) mod serde;
 
-pub use jotta::{auth, Fs};
+pub(crate) mod serde;
 
 pub(crate) type Result<T> = core::result::Result<T, errors::Error>;
 
 pub(crate) const DEVICE: &str = "Jotta";
 pub(crate) const MOUNT_POINT: &str = "Archive";
+
+pub use jotta;
+use jotta::Fs;
 
 /// Jotta configuration.
 #[derive(Debug, Clone)]

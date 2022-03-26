@@ -11,7 +11,7 @@ use actix_web::{
 use futures_util::{io::BufReader, TryStreamExt};
 use http_range::HttpRange;
 use httpdate::fmt_http_date;
-use jotta::range::ClosedByteRange;
+use jotta_osd::jotta::range::ClosedByteRange;
 use jotta_osd::{
     object::{
         create,

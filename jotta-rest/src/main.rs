@@ -1,7 +1,10 @@
 use std::env;
 
 use actix_web::{middleware, web::Data, App, HttpServer};
-use jotta_osd::{auth::LegacyTokenStore, Config, Context, Fs};
+use jotta_osd::{
+    jotta::{auth::LegacyTokenStore, Fs},
+    Config, Context,
+};
 use jotta_rest::{routes, AppConfig};
 
 #[actix_web::main]

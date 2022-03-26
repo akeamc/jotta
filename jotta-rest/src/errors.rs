@@ -1,5 +1,6 @@
 use actix_web::{http::StatusCode, ResponseError};
 use http_range::HttpRangeParseError;
+use jotta_osd::jotta;
 #[derive(Debug, thiserror::Error)]
 pub enum AppError {
     #[error("internal server error")]
