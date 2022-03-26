@@ -3,7 +3,7 @@ use std::fmt::Debug;
 
 use crate::{path::BucketName, Context};
 
-use jotta_fs::{jfs::Folder, path::UserScopedPath};
+use jotta::{jfs::Folder, path::UserScopedPath};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, instrument};
 

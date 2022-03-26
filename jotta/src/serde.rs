@@ -1,51 +1,63 @@
-use std::marker::PhantomData;
-
-use serde::Deserialize;
+use chrono::{DateTime, NaiveDateTime, TimeZone, Utc};
+use serde::{Deserialize, Deserializer};
 use serde_with::DeserializeAs;
 
-/// Treat `null` values as defaults.
-pub(crate) struct NullAsDefault<T>(PhantomData<T>);
+/// The folks at Jottacloud screwed up and added an extra dash in some of their dates:
+///
+/// ```txt
+/// # api responses
+/// 2022-02-24-T04:20:00Z
+///
+/// # iso8601
+/// 2022-02-24T04:20:00Z
+/// ```
+fn parse_typo_datetime(s: &str) -> Result<DateTime<Utc>, chrono::ParseError> {
+    let datetime = NaiveDateTime::parse_from_str(s, "%Y-%m-%d-T%H:%M:%SZ")?;
+    let datetime = Utc.from_local_datetime(&datetime).unwrap();
 
-impl<'de, T> DeserializeAs<'de, Option<T>> for NullAsDefault<T>
-where
-    T: Deserialize<'de> + Default + std::fmt::Debug,
-{
-    fn deserialize_as<D>(deserializer: D) -> Result<Option<T>, D::Error>
+    Ok(datetime)
+}
+
+pub(crate) struct OptTypoDateTime;
+
+impl<'de> DeserializeAs<'de, Option<DateTime<Utc>>> for OptTypoDateTime {
+    fn deserialize_as<D>(deserializer: D) -> Result<Option<DateTime<Utc>>, D::Error>
     where
-        D: serde::Deserializer<'de>,
+        D: Deserializer<'de>,
     {
-        let value = Option::<T>::deserialize(deserializer)?.unwrap_or_default();
+        let s = Option::<String>::deserialize(deserializer)?.filter(|s| !s.is_empty());
 
-        Ok(Some(value))
+        match s {
+            Some(s) => parse_typo_datetime(&s)
+                .map_err(serde::de::Error::custom)
+                .map(Some),
+            None => Ok(None),
+        }
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::NullAsDefault;
-    use serde::Deserialize;
-    use serde_json::json;
-    use serde_with::serde_as;
+pub(crate) mod md5_hex {
+    use hex::FromHexError;
+    use md5::Digest;
+    use serde::{Deserialize, Deserializer, Serializer};
 
-    #[test]
-    fn null_as_default() {
-        #[serde_as]
-        #[derive(Debug, Deserialize, PartialEq, Eq)]
-        struct Params {
-            #[serde(default)]
-            #[serde_as(as = "NullAsDefault<u32>")]
-            score: Option<u32>,
-        }
+    pub(crate) fn serialize<S: Serializer>(
+        digest: &Digest,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&format!("{:x}", digest))
+    }
 
-        let cases = vec![
-            (json!({}), Params { score: None }),
-            (json!({ "score": null }), Params { score: Some(0) }),
-            (json!({ "score": 42 }), Params { score: Some(42) }),
-        ];
+    pub(crate) fn hex_to_digest(str: &str) -> Result<Digest, FromHexError> {
+        let mut bytes = [0; 16];
+        hex::decode_to_slice(str, &mut bytes)?;
+        Ok(Digest(bytes))
+    }
 
-        for (value, expected) in cases {
-            let params: Params = serde_json::from_value(value).unwrap();
-            assert_eq!(params, expected);
-        }
+    pub(crate) fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Digest, D::Error> {
+        let str = String::deserialize(deserializer)?;
+        hex_to_digest(&str).map_err(serde::de::Error::custom)
     }
 }

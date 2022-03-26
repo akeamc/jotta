@@ -53,7 +53,7 @@ impl JavaErrorMessage {
     /// Attempt to extract an [`Exception`].
     ///
     /// ```
-    /// use jotta_fs::api::{Exception, JavaErrorMessage};
+    /// use jotta::api::{Exception, JavaErrorMessage};
     ///
     /// let exceptions = &[
     ///     ("no.jotta.backup.errors.NoSuchPathException: Directory /user69420/Jotta/Archive/s3-test", Some(Exception::NoSuchPathException)),

@@ -1,10 +1,10 @@
 use std::env;
 
 use futures::StreamExt;
-use jotta_fs::{auth::LegacyTokenStore, events, Fs};
+use jotta::{auth::LegacyTokenStore, events, Fs};
 
 #[tokio::main]
-async fn main() -> Result<(), jotta_fs::Error> {
+async fn main() -> Result<(), jotta::Error> {
     tracing_subscriber::fmt::init();
 
     let username = env::var("USERNAME").unwrap();

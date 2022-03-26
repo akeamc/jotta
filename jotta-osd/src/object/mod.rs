@@ -18,7 +18,7 @@ use futures_util::{
     AsyncBufRead, AsyncReadExt, Stream, StreamExt, TryStreamExt,
 };
 
-use jotta_fs::{
+use jotta::{
     files::{AllocReq, ConflictHandler, UploadRes},
     path::{PathOnDevice, UserScopedPath},
     range::{ByteRange, ClosedByteRange, OpenByteRange},
@@ -186,7 +186,7 @@ async fn get_complete_chunk<R: AsyncBufRead + Unpin>(
             .await
         {
             Ok(bytes) => bytes,
-            Err(jotta_fs::Error::NoSuchFileOrFolder) => Bytes::new(), // no tail was found. no worries
+            Err(jotta::Error::NoSuchFileOrFolder) => Bytes::new(), // no tail was found. no worries
             Err(e) => return Err(e.into()),
         };
 
@@ -343,7 +343,7 @@ pub async fn delete(ctx: &Context, bucket: &BucketName, object: &ObjectName) -> 
 
 #[cfg(test)]
 mod tests {
-    use jotta_fs::range::{ClosedByteRange, OpenByteRange};
+    use jotta::range::{ClosedByteRange, OpenByteRange};
 
     use crate::object::{aligned_chunked_byte_range, CHUNK_SIZE};
 

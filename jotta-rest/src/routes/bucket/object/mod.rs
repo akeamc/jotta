@@ -11,7 +11,8 @@ use actix_web::{
 use futures_util::{io::BufReader, TryStreamExt};
 use http_range::HttpRange;
 use httpdate::fmt_http_date;
-use jotta::{
+use jotta::range::ClosedByteRange;
+use jotta_osd::{
     object::{
         create,
         meta::{Meta, Patch},
@@ -20,7 +21,6 @@ use jotta::{
     path::{BucketName, ObjectName},
     Context,
 };
-use jotta_fs::range::ClosedByteRange;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 
@@ -36,7 +36,7 @@ pub struct ObjectPath {
 }
 
 pub async fn list(ctx: Data<Context>, bucket: Path<BucketName>) -> AppResult<HttpResponse> {
-    let objects = jotta::object::list(&ctx, &bucket.into_inner()).await?;
+    let objects = jotta_osd::object::list(&ctx, &bucket.into_inner()).await?;
 
     Ok(HttpResponse::Ok().json(objects))
 }
@@ -71,7 +71,7 @@ pub async fn post(
     payload: Payload,
     req: HttpRequest,
 ) -> AppResult<HttpResponse> {
-    let content_type = req.mime_type()?.map(jotta::object::meta::ContentType);
+    let content_type = req.mime_type()?.map(jotta_osd::object::meta::ContentType);
 
     match params.upload_type {
         UploadType::Media => {
@@ -136,7 +136,7 @@ pub async fn post(
 pub async fn head(ctx: Data<Context>, path: Path<ObjectPath>) -> AppResult<HttpResponse> {
     let mut res = HttpResponse::Ok();
 
-    let meta = jotta::object::meta::get(&ctx, &path.bucket, &path.object).await?;
+    let meta = jotta_osd::object::meta::get(&ctx, &path.bucket, &path.object).await?;
 
     append_object_headers(&mut res, &meta);
 
@@ -169,7 +169,7 @@ pub async fn get(
     path: Path<ObjectPath>,
     params: Query<GetParameters>,
 ) -> AppResult<HttpResponse> {
-    let meta = jotta::object::meta::get(&ctx, &path.bucket, &path.object).await?;
+    let meta = jotta_osd::object::meta::get(&ctx, &path.bucket, &path.object).await?;
     let mut res = HttpResponse::Ok();
 
     append_object_headers(&mut res, &meta);
@@ -185,7 +185,7 @@ pub async fn get(
                 },
             )?;
 
-            let stream = jotta::object::stream_range(
+            let stream = jotta_osd::object::stream_range(
                 ctx.into_inner(),
                 path.bucket.clone(),
                 path.object.clone(),
@@ -218,7 +218,7 @@ pub async fn patch(
         return Err(AppError::BadRequest);
     }
 
-    let new = jotta::object::meta::patch(&ctx, &path.bucket, &path.object, patch).await?;
+    let new = jotta_osd::object::meta::patch(&ctx, &path.bucket, &path.object, patch).await?;
 
     let mut res = HttpResponse::Ok();
 
@@ -228,7 +228,7 @@ pub async fn patch(
 }
 
 pub async fn delete(ctx: Data<Context>, path: Path<ObjectPath>) -> AppResult<HttpResponse> {
-    jotta::object::delete(&ctx, &path.bucket, &path.object).await?;
+    jotta_osd::object::delete(&ctx, &path.bucket, &path.object).await?;
 
     Ok(HttpResponse::NoContent().body(""))
 }

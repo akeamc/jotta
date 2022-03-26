@@ -1,31 +1,105 @@
-//! Error types.
+//! Nobody is perfect.
+use thiserror::Error;
 
-use crate::path::{ParseBucketNameError, ParseObjectNameError};
+use crate::api::{Exception, JsonErrorBody, MaybeUnknown, XmlErrorBody};
 
-/// Error.
-#[derive(Debug, thiserror::Error)]
+/// Error used by the entire Jotta crate.
+#[derive(Debug, Error)]
 pub enum Error {
-    /// A [`jotta_fs::Error`].
-    #[error("upstream fs error")]
-    Fs(#[from] jotta_fs::Error),
+    /// HTTP error.
+    #[error("{0}")]
+    HttpError(#[from] reqwest::Error),
 
-    /// Invalid bucket name.
-    #[error("bucket name parse error: {0}")]
-    ParseBucketName(#[from] ParseBucketNameError),
+    /// Url error.
+    #[error("invalid url")]
+    UrlError(#[from] url::ParseError),
 
-    /// Invalid object name.
-    #[error("object name parse error: {0}")]
-    ParseObjectName(#[from] ParseObjectNameError),
+    /// Upstream (unrecongnized) Jottacloud error. Might be due to
+    /// a user error.
+    #[error("jotta error")]
+    JottaError(ApiResError),
 
-    /// Msgpack encode error.
-    #[error("msgpack encode error: {0}")]
-    MsgpackEncode(#[from] rmp_serde::encode::Error),
+    /// XML deserialization error.
+    #[error("xml error: {0}")]
+    XmlError(#[from] serde_xml_rs::Error),
 
-    /// MsgPack decode error.
-    #[error("msgpack decode error: {0}")]
-    MsgpackDecode(#[from] rmp_serde::decode::Error),
+    /// File conflict.
+    #[error("file or folder already exists")]
+    AlreadyExists,
 
-    /// I/O error.
-    #[error("io error")]
-    IoError(#[from] std::io::Error),
+    /// Bad credentials.
+    #[error("bad credentials")]
+    BadCredentials,
+
+    /// Not found.
+    #[error("file or folder does not exist")]
+    NoSuchFileOrFolder,
+
+    /// Incomplete upload.
+    #[error("incomplete upload; maybe too short body?")]
+    IncompleteUpload,
+
+    /// Invalid argument.
+    #[error("invalid argument")]
+    InvalidArgument,
+
+    /// Corrupt upload, probably due to a checksum mismatch.
+    #[error("corrupt upload")]
+    CorruptUpload,
+
+    /// Token was not successfully renewed.
+    #[error("token renewal failed")]
+    TokenRenewalFailed,
+
+    /// Range not satisfiable.
+    #[error("range not satisfiable")]
+    RangeNotSatisfiable,
+
+    /// Events error.
+    #[error("{0}")]
+    EventError(#[from] crate::events::Error),
+}
+
+/// All possible errors returned by the upstream Jottacloud API.
+#[derive(Debug)]
+pub enum ApiResError {
+    /// JSON error, returned by `api.jottacloud.com/files/v1` for example.
+    Json(JsonErrorBody),
+    /// XML error returned by `jfs.jottacloud.com`.
+    Xml(XmlErrorBody),
+}
+
+impl From<JsonErrorBody> for Error {
+    fn from(err: JsonErrorBody) -> Self {
+        match err.error_id {
+            Some(MaybeUnknown::Known(exception)) => Error::from(exception),
+            _ => Self::JottaError(ApiResError::Json(err)),
+        }
+    }
+}
+
+impl From<XmlErrorBody> for Error {
+    fn from(err: XmlErrorBody) -> Self {
+        if let Some(exception) = err.exception_opt() {
+            Error::from(exception)
+        } else {
+            Self::JottaError(ApiResError::Xml(err))
+        }
+    }
+}
+
+impl From<Exception> for Error {
+    fn from(exception: Exception) -> Self {
+        match exception {
+            Exception::UniqueFileException => Error::AlreadyExists,
+            Exception::BadCredentialsException => Error::BadCredentials,
+            Exception::CorruptUploadOpenApiException => Error::CorruptUpload,
+            Exception::NoSuchFileException | Exception::NoSuchPathException => {
+                Error::NoSuchFileOrFolder
+            }
+            Exception::InvalidArgumentException => Error::InvalidArgument,
+            Exception::IncompleteUploadOpenApiException => Error::IncompleteUpload,
+            Exception::RequestedRangeNotSatisfiedException => Error::RangeNotSatisfiable,
+        }
+    }
 }

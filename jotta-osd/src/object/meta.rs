@@ -1,7 +1,7 @@
 //! Object metadata.
 use chrono::{DateTime, Utc};
 use derive_more::Display;
-use jotta_fs::{
+use jotta::{
     files::{AllocReq, ConflictHandler, UploadRes},
     path::{PathOnDevice, UserScopedPath},
     range::OpenByteRange,
@@ -103,7 +103,7 @@ pub(crate) async fn set_raw(
         UploadRes::Complete(_) => Ok(()),
         UploadRes::Incomplete(_) => {
             warn!("metadata did not completely upload");
-            Err(Error::Fs(jotta_fs::Error::IncompleteUpload))
+            Err(Error::Fs(jotta::Error::IncompleteUpload))
         }
     }
 }

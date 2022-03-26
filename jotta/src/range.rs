@@ -20,7 +20,7 @@ pub trait ByteRange: Debug {
     /// Get the length.
     ///
     /// ```
-    /// use jotta_fs::range::{ByteRange, OpenByteRange, ClosedByteRange};
+    /// use jotta::range::{ByteRange, OpenByteRange, ClosedByteRange};
     ///
     /// assert_eq!(ByteRange::len(&ClosedByteRange::new_to_including(3)), Some(4));
     /// assert_eq!(ByteRange::len(&ClosedByteRange::try_from_bounds(3, 7).unwrap()), Some(5));
@@ -31,7 +31,7 @@ pub trait ByteRange: Debug {
     /// Is the range empty?
     ///
     /// ```
-    /// use jotta_fs::range::{ByteRange, OpenByteRange, ClosedByteRange};
+    /// use jotta::range::{ByteRange, OpenByteRange, ClosedByteRange};
     ///
     /// assert!(!ClosedByteRange::new_to_including(3).is_empty());
     /// assert!(!OpenByteRange::new(10).is_empty());
@@ -45,7 +45,7 @@ pub trait ByteRange: Debug {
     /// Format a single "segment" of a HTTP `Range` header.
     ///
     /// ```
-    /// use jotta_fs::range::{ByteRange, OpenByteRange, ClosedByteRange};
+    /// use jotta::range::{ByteRange, OpenByteRange, ClosedByteRange};
     ///
     /// assert_eq!(ClosedByteRange::try_from_bounds(5, 50).unwrap().to_http_range(), "5-50");
     ///
@@ -137,7 +137,7 @@ impl ClosedByteRange {
     /// Attempt to construct a new closed byte range from some specified bounds.
     ///
     /// ```
-    /// use jotta_fs::range::ClosedByteRange;
+    /// use jotta::range::ClosedByteRange;
     ///
     /// let range = ClosedByteRange::try_from_bounds(3, 8).unwrap();
     ///
@@ -149,7 +149,7 @@ impl ClosedByteRange {
     /// # Errors
     ///
     /// ```
-    /// # use jotta_fs::range::ClosedByteRange;
+    /// # use jotta::range::ClosedByteRange;
     /// assert!(ClosedByteRange::try_from_bounds(100, 0).is_err()); // reversed
     /// ```
     pub fn try_from_bounds(first: u64, last: u64) -> Result<Self, InvalidRangeError> {
@@ -164,7 +164,7 @@ impl ClosedByteRange {
     /// First byte will be 0.
     ///
     /// ```
-    /// use jotta_fs::range::ClosedByteRange;
+    /// use jotta::range::ClosedByteRange;
     ///
     /// assert_eq!(ClosedByteRange::new_to_including(10), ClosedByteRange::try_from_bounds(0, 10).unwrap())
     /// ```
@@ -194,7 +194,7 @@ impl ClosedByteRange {
     /// Get the end byte.
     ///
     /// ```
-    /// use jotta_fs::range::ClosedByteRange;
+    /// use jotta::range::ClosedByteRange;
     ///
     /// assert_eq!(ClosedByteRange::try_from_bounds(5, 20).unwrap().end(), 20);
     /// ```

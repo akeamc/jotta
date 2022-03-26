@@ -310,7 +310,7 @@ impl Folder {
     /// Check if the folder is deleted.
     ///
     /// ```
-    /// # use jotta_fs::jfs::Folder;
+    /// # use jotta::jfs::Folder;
     /// use chrono::Utc;
     ///
     /// let folder = Folder {

@@ -1,9 +1,7 @@
 //! Authentication and authorization for Jottacloud itself and whitelabel providers.
-use std::{
-    fmt::Debug,
-    sync::{Arc, RwLock},
-};
+use std::{fmt::Debug, sync::Arc};
 
+use async_rwlock::RwLock;
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
 
@@ -12,6 +10,8 @@ use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use tracing::{instrument, trace};
 use uuid::Uuid;
+
+use crate::Error;
 
 /// A thread-safe caching token store for legacy authentication,
 /// i.e. mostly vanilla Jottacloud.
@@ -91,6 +91,10 @@ impl LegacyTokenStore {
             .send()
             .await?;
 
+        if !resp.status().is_success() {
+            return Err(Error::TokenRenewalFailed);
+        }
+
         resp.json().await.map_err(Into::into)
     }
 
@@ -146,7 +150,7 @@ impl TokenStore for LegacyTokenStore {
     #[instrument(level = "trace", skip_all)]
     async fn get_access_token(&self, client: &Client) -> crate::Result<AccessToken> {
         {
-            let lock = self.access_token.read().unwrap();
+            let lock = self.access_token.read().await;
 
             if let Some(ref access_token) = *lock {
                 if access_token.exp() >= Utc::now() + Duration::minutes(5) {
@@ -157,6 +161,8 @@ impl TokenStore for LegacyTokenStore {
         }
 
         trace!("renewing access token");
+
+        let mut lock = self.access_token.write().await;
 
         let res = Self::manage_token(
             client,
@@ -173,7 +179,7 @@ impl TokenStore for LegacyTokenStore {
 
         let access_token = res.to_access_token();
 
-        *self.access_token.write().unwrap() = Some(access_token.clone());
+        *lock = Some(access_token.clone());
 
         Ok(access_token)
     }
