@@ -19,14 +19,13 @@ use jotta_osd::{
         upload_range,
     },
     path::{BucketName, ObjectName},
-    Context,
 };
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 
 use std::io::{Error as IoError, ErrorKind as IoErrorKind};
 
-use crate::{errors::AppError, AppConfig, AppResult};
+use crate::{errors::AppError, AppConfig, AppContext, AppResult};
 
 #[serde_as]
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -35,7 +34,7 @@ pub struct ObjectPath {
     object: ObjectName,
 }
 
-pub async fn list(ctx: Data<Context>, bucket: Path<BucketName>) -> AppResult<HttpResponse> {
+pub async fn list(ctx: Data<AppContext>, bucket: Path<BucketName>) -> AppResult<HttpResponse> {
     let objects = jotta_osd::object::list(&ctx, &bucket.into_inner()).await?;
 
     Ok(HttpResponse::Ok().json(objects))
@@ -65,7 +64,7 @@ pub struct PostParameters {
 
 pub async fn post(
     cfg: Data<AppConfig>,
-    ctx: Data<Context>,
+    ctx: Data<AppContext>,
     path: Path<ObjectPath>,
     params: Query<PostParameters>,
     payload: Payload,
@@ -94,7 +93,7 @@ pub async fn post(
                 &path.object,
                 0,
                 reader,
-                cfg.connections_per_transfer,
+                cfg.connections_per_request,
             )
             .await?;
 
@@ -133,7 +132,7 @@ pub async fn post(
     }
 }
 
-pub async fn head(ctx: Data<Context>, path: Path<ObjectPath>) -> AppResult<HttpResponse> {
+pub async fn head(ctx: Data<AppContext>, path: Path<ObjectPath>) -> AppResult<HttpResponse> {
     let mut res = HttpResponse::Ok();
 
     let meta = jotta_osd::object::meta::get(&ctx, &path.bucket, &path.object).await?;
@@ -165,7 +164,7 @@ pub struct GetParameters {
 pub async fn get(
     cfg: Data<AppConfig>,
     req: HttpRequest,
-    ctx: Data<Context>,
+    ctx: Data<AppContext>,
     path: Path<ObjectPath>,
     params: Query<GetParameters>,
 ) -> AppResult<HttpResponse> {
@@ -190,7 +189,7 @@ pub async fn get(
                 path.bucket.clone(),
                 path.object.clone(),
                 range,
-                cfg.connections_per_transfer,
+                cfg.connections_per_request,
             );
 
             if range.len() < meta.size {
@@ -208,7 +207,7 @@ pub async fn get(
 }
 
 pub async fn patch(
-    ctx: Data<Context>,
+    ctx: Data<AppContext>,
     path: Path<ObjectPath>,
     patch: Json<Patch>,
 ) -> AppResult<HttpResponse> {
@@ -227,7 +226,7 @@ pub async fn patch(
     Ok(res.content_type(ContentType::json()).json(new))
 }
 
-pub async fn delete(ctx: Data<Context>, path: Path<ObjectPath>) -> AppResult<HttpResponse> {
+pub async fn delete(ctx: Data<AppContext>, path: Path<ObjectPath>) -> AppResult<HttpResponse> {
     jotta_osd::object::delete(&ctx, &path.bucket, &path.object).await?;
 
     Ok(HttpResponse::NoContent().body(""))

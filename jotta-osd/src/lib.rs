@@ -19,7 +19,7 @@ pub(crate) const DEVICE: &str = "Jotta";
 pub(crate) const MOUNT_POINT: &str = "Archive";
 
 pub use jotta;
-use jotta::Fs;
+use jotta::{auth::TokenStore, Fs};
 
 /// Jotta configuration.
 #[derive(Debug, Clone)]
@@ -38,15 +38,16 @@ impl Config {
 /// The context is used for all Jotta operations. Shared mutable state
 /// is achieved by internal `Arc`s.
 #[derive(Debug)]
-pub struct Context {
-    fs: Fs,
+pub struct Context<S: TokenStore> {
+    fs: Fs<S>,
     config: Config,
 }
 
-impl Context {
-    /// Initialize a new context.
+impl<S: TokenStore> Context<S> {
+    /// Initialize a new context. This does not immediately create
+    /// a root directory.
     #[must_use]
-    pub fn new(fs: Fs, config: Config) -> Self {
+    pub fn new(fs: Fs<S>, config: Config) -> Self {
         Self { fs, config }
     }
 

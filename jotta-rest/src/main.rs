@@ -1,11 +1,6 @@
-use std::env;
-
 use actix_web::{middleware, web::Data, App, HttpServer};
-use jotta_osd::{
-    jotta::{auth::LegacyTokenStore, Fs},
-    Config, Context,
-};
-use jotta_rest::{routes, AppConfig};
+use jotta_rest::{routes, AppOpt};
+use structopt::StructOpt;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -13,32 +8,22 @@ async fn main() -> std::io::Result<()> {
 
     tracing_subscriber::fmt::init();
 
-    // let refresh_token = env::var("REFRESH_TOKEN").expect("REFRESH_TOKEN not set");
-    // let session_id = env::var("SESSION_ID").expect("SESSION_ID not set");
+    let opt = AppOpt::from_args();
+    let conf = opt.open_conf().unwrap();
 
-    let username = env::var("USERNAME").unwrap();
-    let password = env::var("PASSWORD").unwrap();
+    let ctx = Data::new(conf.to_ctx().await.unwrap());
 
-    let store = LegacyTokenStore::try_from_username_password(&username, &password)
-        .await
-        .unwrap();
-
-    let fs = Fs::new(store);
-    let ctx = Context::new(fs, Config::new("s3-test"));
-
-    let data = Data::new(ctx);
+    eprintln!("binding {}", opt.address);
 
     HttpServer::new(move || {
         App::new()
-            .app_data(Data::new(AppConfig {
-                connections_per_transfer: 10,
-            }))
-            .app_data(data.clone())
+            .app_data(Data::new(conf.clone()))
+            .app_data(ctx.clone())
             .wrap(middleware::NormalizePath::trim())
             .wrap(middleware::Logger::default())
             .configure(routes::config)
     })
-    .bind("0.0.0.0:8000")?
+    .bind(opt.address)?
     .run()
     .await
 }

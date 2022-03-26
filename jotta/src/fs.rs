@@ -33,22 +33,22 @@ pub static USER_AGENT: &str = concat!(
 
 /// A Jottacloud "filesystem".
 #[derive(Debug)]
-pub struct Fs {
+pub struct Fs<S> {
     client: Client,
-    token_store: Box<dyn TokenStore>,
+    token_store: S,
 }
 
-impl Fs {
+impl<S: TokenStore> Fs<S> {
     /// Create a new filesystem.
     ///
     /// # Panics
     ///
     /// Panics if the HTTP client fails to initialize.
     #[must_use]
-    pub fn new<S: TokenStore + 'static>(token_store: S) -> Self {
+    pub fn new(token_store: S) -> Self {
         Self {
             client: Client::builder().user_agent(USER_AGENT).build().unwrap(),
-            token_store: Box::new(token_store),
+            token_store,
         }
     }
 

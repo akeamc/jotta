@@ -19,6 +19,7 @@ use futures_util::{
 };
 
 use jotta::{
+    auth::TokenStore,
     files::{AllocReq, ConflictHandler, UploadRes},
     path::{PathOnDevice, UserScopedPath},
     range::{ByteRange, ClosedByteRange, OpenByteRange},
@@ -46,7 +47,10 @@ pub const CHUNK_SIZE: usize = 1 << 20;
 ///
 /// Returns an error if there is no bucket with the specified name.
 #[instrument(skip(ctx))]
-pub async fn list(ctx: &Context, bucket: &BucketName) -> crate::Result<Vec<ObjectName>> {
+pub async fn list(
+    ctx: &Context<impl TokenStore>,
+    bucket: &BucketName,
+) -> crate::Result<Vec<ObjectName>> {
     let folders = ctx
         .fs
         .index(&UserScopedPath(format!(
@@ -71,7 +75,7 @@ pub async fn list(ctx: &Context, bucket: &BucketName) -> crate::Result<Vec<Objec
 /// Create an object. This does not upload any actual binary data, only metadata.
 #[instrument(skip(ctx))]
 pub async fn create(
-    ctx: &Context,
+    ctx: &Context<impl TokenStore>,
     bucket: &BucketName,
     name: &ObjectName,
     meta: Patch,
@@ -93,7 +97,7 @@ pub async fn create(
 
 #[instrument(level = "trace", skip(ctx, bucket, object, body))]
 async fn upload(
-    ctx: &Context,
+    ctx: &Context<impl TokenStore>,
     bucket: &BucketName,
     object: &ObjectName,
     index: u32,
@@ -128,7 +132,7 @@ async fn upload(
 }
 
 async fn get_complete_chunk<R: AsyncBufRead + Unpin>(
-    ctx: &Context,
+    ctx: &Context<impl TokenStore>,
     bucket: &BucketName,
     object: &ObjectName,
     mut cursor: usize,
@@ -200,7 +204,7 @@ async fn get_complete_chunk<R: AsyncBufRead + Unpin>(
 /// be overwritten but not truncated.
 #[instrument(skip(ctx, file))]
 pub async fn upload_range<R: AsyncBufRead + Unpin>(
-    ctx: &Context,
+    ctx: &Context<impl TokenStore>,
     bucket: &BucketName,
     name: &ObjectName,
     offset: u64,
@@ -294,8 +298,8 @@ fn aligned_chunked_byte_range(
 /// range.
 #[instrument(skip(ctx))]
 #[allow(clippy::manual_async_fn)] // lifetimes don't allow async syntax
-pub fn stream_range<'a>(
-    ctx: Arc<Context>,
+pub fn stream_range<'a, S: TokenStore + 'a>(
+    ctx: Arc<Context<S>>,
     bucket: BucketName,
     name: ObjectName,
     range: ClosedByteRange,
@@ -327,7 +331,11 @@ pub fn stream_range<'a>(
 
 /// Delete an object.
 #[instrument(skip(ctx))]
-pub async fn delete(ctx: &Context, bucket: &BucketName, object: &ObjectName) -> crate::Result<()> {
+pub async fn delete(
+    ctx: &Context<impl TokenStore>,
+    bucket: &BucketName,
+    object: &ObjectName,
+) -> crate::Result<()> {
     let _res = ctx
         .fs
         .remove_folder(&UserScopedPath(format!(

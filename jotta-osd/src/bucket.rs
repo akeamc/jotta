@@ -3,7 +3,7 @@ use std::fmt::Debug;
 
 use crate::{path::BucketName, Context};
 
-use jotta::{jfs::Folder, path::UserScopedPath};
+use jotta::{auth::TokenStore, jfs::Folder, path::UserScopedPath};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, instrument};
 
@@ -30,7 +30,7 @@ impl<F: Into<Folder>> From<F> for Bucket {
 ///
 /// Errors if something goes wrong with the underlying Jotta Filesystem.
 #[instrument(skip(ctx))]
-pub async fn list(ctx: &Context) -> crate::Result<Vec<Bucket>> {
+pub async fn list(ctx: &Context<impl TokenStore>) -> crate::Result<Vec<Bucket>> {
     let index = ctx
         .fs
         .index(&UserScopedPath(ctx.user_scoped_root()))
@@ -54,7 +54,7 @@ pub async fn list(ctx: &Context) -> crate::Result<Vec<Bucket>> {
 /// # Errors
 ///
 /// Your usual Jottacloud errors may happen, though.
-pub async fn create(ctx: &Context, bucket: &BucketName) -> crate::Result<Bucket> {
+pub async fn create(ctx: &Context<impl TokenStore>, bucket: &BucketName) -> crate::Result<Bucket> {
     let folder = ctx
         .fs
         .create_folder(&UserScopedPath(format!(
@@ -69,7 +69,7 @@ pub async fn create(ctx: &Context, bucket: &BucketName) -> crate::Result<Bucket>
 
 /// Get details about a bucket by name.
 #[instrument(skip(ctx))]
-pub async fn get(ctx: &Context, bucket: &BucketName) -> crate::Result<Bucket> {
+pub async fn get(ctx: &Context<impl TokenStore>, bucket: &BucketName) -> crate::Result<Bucket> {
     let folder = ctx
         .fs
         .index(&UserScopedPath(format!(
@@ -88,7 +88,7 @@ pub async fn get(ctx: &Context, bucket: &BucketName) -> crate::Result<Bucket> {
 ///
 /// Your usual Jottacloud errors.
 #[instrument(skip(ctx))]
-pub async fn delete(ctx: &Context, bucket: &BucketName) -> crate::Result<()> {
+pub async fn delete(ctx: &Context<impl TokenStore>, bucket: &BucketName) -> crate::Result<()> {
     let _res = ctx
         .fs
         .remove_folder(&UserScopedPath(format!(

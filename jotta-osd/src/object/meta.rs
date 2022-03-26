@@ -2,6 +2,7 @@
 use chrono::{DateTime, Utc};
 use derive_more::Display;
 use jotta::{
+    auth::TokenStore,
     files::{AllocReq, ConflictHandler, UploadRes},
     path::{PathOnDevice, UserScopedPath},
     range::OpenByteRange,
@@ -74,7 +75,7 @@ impl Meta {
 
 /// Set the metadata of an object.
 pub(crate) async fn set_raw(
-    ctx: &Context,
+    ctx: &Context<impl TokenStore>,
     bucket: &BucketName,
     object: &ObjectName,
     meta: &Meta,
@@ -165,7 +166,7 @@ impl From<Meta> for Patch {
 /// - network errors
 /// - no remote metadata to patch
 pub async fn patch(
-    ctx: &Context,
+    ctx: &Context<impl TokenStore>,
     bucket: &BucketName,
     object: &ObjectName,
     patch: Patch,
@@ -192,7 +193,11 @@ pub async fn patch(
 
 /// Get metadata associated with an object.
 #[instrument(skip(ctx))]
-pub async fn get(ctx: &Context, bucket: &BucketName, name: &ObjectName) -> crate::Result<Meta> {
+pub async fn get(
+    ctx: &Context<impl TokenStore>,
+    bucket: &BucketName,
+    name: &ObjectName,
+) -> crate::Result<Meta> {
     let msg = ctx
         .fs
         .file_to_bytes(
