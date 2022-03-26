@@ -131,7 +131,7 @@ impl Patch {
     /// Is the patch empty?
     ///
     /// ```
-    /// use jotta::object::meta::Patch;
+    /// use jotta_osd::object::meta::Patch;
     ///
     /// assert!(Patch { content_type: None, cache_control: None }.is_empty());
     /// ```

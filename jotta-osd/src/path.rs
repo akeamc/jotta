@@ -10,7 +10,7 @@ use std::{fmt::Display, str::FromStr, string::FromUtf8Error};
 /// A human-readable object name.
 ///
 /// ```
-/// use jotta::path::ObjectName;
+/// use jotta_osd::path::ObjectName;
 /// use std::str::FromStr;
 ///
 /// assert!(ObjectName::from_str("").is_err());
@@ -36,10 +36,10 @@ impl ObjectName {
     /// Convert the object name to hexadecimal.
     ///
     /// ```
-    /// use jotta::path::ObjectName;
+    /// use jotta_osd::path::ObjectName;
     /// use std::str::FromStr;
     ///
-    /// # fn main() -> Result<(), jotta::path::ParseObjectNameError> {
+    /// # fn main() -> Result<(), jotta_osd::path::ParseObjectNameError> {
     /// let name = ObjectName::from_str("cat.jpeg")?;
     ///
     /// assert_eq!(name.to_hex(), "6361742e6a706567");
@@ -116,7 +116,7 @@ pub enum ParseObjectNameError {
 /// A bucket name
 ///
 /// ```
-/// use jotta::path::BucketName;
+/// use jotta_osd::path::BucketName;
 /// use std::str::FromStr;
 ///
 /// assert!(BucketName::from_str("hello").is_ok());
