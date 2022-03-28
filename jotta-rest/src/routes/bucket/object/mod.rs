@@ -25,7 +25,7 @@ use serde_with::serde_as;
 
 use std::io::{Error as IoError, ErrorKind as IoErrorKind};
 
-use crate::{errors::AppError, AppConfig, AppContext, AppResult};
+use crate::{errors::AppError, settings::Settings, AppContext, AppResult};
 
 #[serde_as]
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -63,7 +63,7 @@ pub struct PostParameters {
 }
 
 pub async fn post(
-    cfg: Data<AppConfig>,
+    settings: Data<Settings>,
     ctx: Data<AppContext>,
     path: Path<ObjectPath>,
     params: Query<PostParameters>,
@@ -93,7 +93,7 @@ pub async fn post(
                 &path.object,
                 0,
                 reader,
-                cfg.connections_per_request,
+                settings.connections_per_request,
             )
             .await?;
 
@@ -162,7 +162,7 @@ pub struct GetParameters {
 }
 
 pub async fn get(
-    cfg: Data<AppConfig>,
+    settings: Data<Settings>,
     req: HttpRequest,
     ctx: Data<AppContext>,
     path: Path<ObjectPath>,
@@ -189,7 +189,7 @@ pub async fn get(
                 path.bucket.clone(),
                 path.object.clone(),
                 range,
-                cfg.connections_per_request,
+                settings.connections_per_request,
             );
 
             if range.len() < meta.size {
