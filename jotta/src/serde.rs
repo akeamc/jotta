@@ -8,14 +8,13 @@ use time::{macros::format_description, OffsetDateTime, PrimitiveDateTime};
 /// # api responses
 /// 2022-02-24-T04:20:00Z
 ///
-/// # iso8601
+/// # rfc3339
 /// 2022-02-24T04:20:00Z
 /// ```
 fn parse_typo_datetime(s: &str) -> Result<OffsetDateTime, time::error::Parse> {
     let format = format_description!("[year]-[month]-[day]-T[hour]:[minute]:[second]Z");
 
-    let prim = PrimitiveDateTime::parse(s, &format)?;
-    Ok(prim.assume_utc())
+    PrimitiveDateTime::parse(s, &format).map(|p| p.assume_utc())
 }
 
 pub(crate) struct OptTypoDateTime;
