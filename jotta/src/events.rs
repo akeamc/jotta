@@ -18,11 +18,11 @@
 use std::str::FromStr;
 
 use crate::{auth::TokenStore, serde::OptTypoDateTime, USER_AGENT};
-use chrono::{DateTime, Utc};
 use futures::{future, Sink, SinkExt, Stream, StreamExt};
 use reqwest::{Method, Url};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
+use time::OffsetDateTime;
 use tokio_tungstenite::{
     connect_async,
     tungstenite::{self, Message},
@@ -120,7 +120,7 @@ pub struct WsFile {
 
     /// Creation date.
     #[serde_as(as = "OptTypoDateTime")]
-    pub created: Option<DateTime<Utc>>,
+    pub created: Option<OffsetDateTime>,
 
     /// Node that fulfilled the request.
     pub dfs: String,
@@ -138,7 +138,7 @@ pub struct WsFile {
 
     /// Modification date.
     #[serde_as(as = "OptTypoDateTime")]
-    pub modified: Option<DateTime<Utc>>,
+    pub modified: Option<OffsetDateTime>,
 
     /// Revision number (starts at one).
     #[serde(with = "serde_with::rust::display_fromstr")]
@@ -150,7 +150,7 @@ pub struct WsFile {
 
     /// Update time.
     #[serde_as(as = "OptTypoDateTime")]
-    pub updated: Option<DateTime<Utc>>,
+    pub updated: Option<OffsetDateTime>,
 }
 
 /// A directory.
@@ -225,8 +225,8 @@ pub enum ServerMessage {
         kind: EventKind,
 
         /// Timestamp of the event.
-        #[serde_as(as = "serde_with::TimestampMilliSeconds")]
-        ts: DateTime<Utc>,
+        #[serde_as(as = "crate::serde::UnixMillis")]
+        ts: OffsetDateTime,
 
         /// Inner event data.
         #[serde(flatten)]

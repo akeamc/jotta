@@ -1,6 +1,6 @@
-use chrono::{DateTime, NaiveDateTime, TimeZone, Utc};
-use serde::{Deserialize, Deserializer};
-use serde_with::DeserializeAs;
+use serde::{Deserialize, Deserializer, Serializer};
+use serde_with::{DeserializeAs, SerializeAs};
+use time::{macros::format_description, OffsetDateTime, PrimitiveDateTime};
 
 /// The folks at Jottacloud screwed up and added an extra dash in some of their dates:
 ///
@@ -11,17 +11,17 @@ use serde_with::DeserializeAs;
 /// # iso8601
 /// 2022-02-24T04:20:00Z
 /// ```
-fn parse_typo_datetime(s: &str) -> Result<DateTime<Utc>, chrono::ParseError> {
-    let datetime = NaiveDateTime::parse_from_str(s, "%Y-%m-%d-T%H:%M:%SZ")?;
-    let datetime = Utc.from_local_datetime(&datetime).unwrap();
+fn parse_typo_datetime(s: &str) -> Result<OffsetDateTime, time::error::Parse> {
+    let format = format_description!("[year]-[month]-[day]-T[hour]:[minute]:[second]Z");
 
-    Ok(datetime)
+    let prim = PrimitiveDateTime::parse(s, &format)?;
+    Ok(prim.assume_utc())
 }
 
 pub(crate) struct OptTypoDateTime;
 
-impl<'de> DeserializeAs<'de, Option<DateTime<Utc>>> for OptTypoDateTime {
-    fn deserialize_as<D>(deserializer: D) -> Result<Option<DateTime<Utc>>, D::Error>
+impl<'de> DeserializeAs<'de, Option<OffsetDateTime>> for OptTypoDateTime {
+    fn deserialize_as<D>(deserializer: D) -> Result<Option<OffsetDateTime>, D::Error>
     where
         D: Deserializer<'de>,
     {
@@ -33,6 +33,31 @@ impl<'de> DeserializeAs<'de, Option<DateTime<Utc>>> for OptTypoDateTime {
                 .map(Some),
             None => Ok(None),
         }
+    }
+}
+
+pub(crate) struct UnixMillis;
+
+impl SerializeAs<OffsetDateTime> for UnixMillis {
+    fn serialize_as<S>(source: &OffsetDateTime, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let ms = (source.unix_timestamp_nanos() / 1_000_000)
+            .try_into()
+            .map_err(serde::ser::Error::custom)?;
+        serializer.serialize_i64(ms)
+    }
+}
+
+impl<'de> DeserializeAs<'de, OffsetDateTime> for UnixMillis {
+    fn deserialize_as<D>(deserializer: D) -> Result<OffsetDateTime, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let ms = i64::deserialize(deserializer)?;
+        OffsetDateTime::from_unix_timestamp_nanos(i128::from(ms) * 1_000_000)
+            .map_err(serde::de::Error::custom)
     }
 }
 
@@ -59,5 +84,20 @@ pub(crate) mod md5_hex {
     ) -> Result<Digest, D::Error> {
         let str = String::deserialize(deserializer)?;
         hex_to_digest(&str).map_err(serde::de::Error::custom)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use time::macros::datetime;
+
+    use crate::serde::parse_typo_datetime;
+
+    #[test]
+    fn typo_datetime_parsing() {
+        assert_eq!(
+            parse_typo_datetime("2020-05-16-T10:46:05Z").unwrap(),
+            datetime!(2020-05-16 10:46:05 +00:00:00)
+        );
     }
 }

@@ -11,7 +11,6 @@ use crate::{
     Context,
 };
 use bytes::{Bytes, BytesMut};
-use chrono::Utc;
 
 use futures_util::{
     stream::{self},
@@ -25,6 +24,7 @@ use jotta::{
     range::{ByteRange, ClosedByteRange, OpenByteRange},
 };
 
+use time::OffsetDateTime;
 use tracing::{debug, instrument, trace, warn};
 
 use self::meta::{set_raw, Meta, Patch};
@@ -80,7 +80,7 @@ pub async fn create(
     name: &ObjectName,
     meta: Patch,
 ) -> crate::Result<Meta> {
-    let now = Utc::now();
+    let now = OffsetDateTime::now_utc();
 
     let meta = Meta {
         size: 0,
@@ -254,7 +254,7 @@ pub async fn upload_range<R: AsyncBufRead + Unpin>(
 
     let meta = Meta {
         size: meta.size.max(bytes_uploaded + offset),
-        updated: Utc::now(),
+        updated: OffsetDateTime::now_utc(),
         ..meta
     };
 

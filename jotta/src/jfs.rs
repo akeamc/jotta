@@ -1,9 +1,9 @@
 //! XML and Serde don't work well together. Pain.
-use chrono::{DateTime, Utc};
 use md5::Digest;
 use num::{Integer, Signed};
 use reqwest::{header, Client};
 use serde::Deserialize;
+use time::OffsetDateTime;
 
 use serde_with::serde_as;
 use uuid::Uuid;
@@ -36,7 +36,7 @@ pub struct Device {
 
     /// Last-modified timestamp. A value of `None` means never.
     #[serde_as(as = "OptTypoDateTime")]
-    pub modified: Option<DateTime<Utc>>,
+    pub modified: Option<OffsetDateTime>,
 }
 
 /// A vector of devices.
@@ -172,7 +172,7 @@ pub struct MountPoint {
 
     /// Last modification of the mount point. `None` menas never.
     #[serde_as(as = "OptTypoDateTime")]
-    pub modified: Option<DateTime<Utc>>,
+    pub modified: Option<OffsetDateTime>,
 }
 
 /// List mount points of a device. The device name is case-insensitive.
@@ -236,10 +236,10 @@ pub struct Revision {
     pub state: RevisionState,
     /// Creation timestamp.
     #[serde_as(as = "OptTypoDateTime")]
-    pub created: Option<DateTime<Utc>>,
+    pub created: Option<OffsetDateTime>,
     /// Modification timestamp.
     #[serde_as(as = "OptTypoDateTime")]
-    pub modified: Option<DateTime<Utc>>,
+    pub modified: Option<OffsetDateTime>,
     /// Mime type of the revision.
     pub mime: String,
     /// `size` can be `None` if the revision is corrupted.
@@ -256,7 +256,7 @@ pub struct Revision {
     /// uploads, for example) in contrast to the `modified` field which can be set
     /// by the user upon allocation.
     #[serde_as(as = "OptTypoDateTime")]
-    pub updated: Option<DateTime<Utc>>,
+    pub updated: Option<OffsetDateTime>,
 }
 
 impl Revision {
@@ -279,7 +279,7 @@ pub struct ListedFile {
     /// Deletion date of the file. `None` means it isn't deleted.
     #[serde_as(as = "OptTypoDateTime")]
     #[serde(default)]
-    pub deleted: Option<DateTime<Utc>>,
+    pub deleted: Option<OffsetDateTime>,
     /// Current revision of the file.
     pub current_revision: Option<Revision>,
     /// Optional latest revision.
@@ -303,7 +303,7 @@ pub struct Folder {
     /// Optional deletion date.
     #[serde_as(as = "OptTypoDateTime")]
     #[serde(default)]
-    pub deleted: Option<DateTime<Utc>>,
+    pub deleted: Option<OffsetDateTime>,
 }
 
 impl Folder {
@@ -311,11 +311,11 @@ impl Folder {
     ///
     /// ```
     /// # use jotta::jfs::Folder;
-    /// use chrono::Utc;
+    /// use time::OffsetDateTime;
     ///
     /// let folder = Folder {
     ///     name: "My folder".into(),
-    ///     deleted: Some(Utc::now()),
+    ///     deleted: Some(OffsetDateTime::now_utc()),
     /// };
     ///
     /// assert!(folder.is_deleted());

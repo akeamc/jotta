@@ -1,5 +1,4 @@
 //! Object metadata.
-use chrono::{DateTime, Utc};
 use derive_more::Display;
 use jotta::{
     auth::TokenStore,
@@ -10,6 +9,7 @@ use jotta::{
 use mime::Mime;
 use serde::{Deserialize, Serialize};
 use serde_with::{serde_as, DisplayFromStr};
+use time::OffsetDateTime;
 use tracing::{error, instrument, warn};
 
 use crate::{errors::Error, serde::NullAsDefault};
@@ -46,9 +46,11 @@ pub struct Meta {
     // /// CRC32 checksum.
     // pub crc32c: u32,
     /// Creation timestamp.
-    pub created: DateTime<Utc>,
+    #[serde(with = "time::serde::rfc3339")]
+    pub created: OffsetDateTime,
     /// Update timestamp.
-    pub updated: DateTime<Utc>,
+    #[serde(with = "time::serde::rfc3339")]
+    pub updated: OffsetDateTime,
     /// Media type of the object.
     pub content_type: ContentType,
     /// Cache control.
@@ -176,7 +178,7 @@ pub async fn patch(
     if !patch.is_empty() {
         meta.patch(patch);
 
-        meta.updated = Utc::now();
+        meta.updated = OffsetDateTime::now_utc();
 
         set_raw(
             ctx,

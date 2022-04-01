@@ -1,11 +1,11 @@
 //! Utilities for the API at `api.jottacloud.com/files/v1`.
 use std::ops::RangeInclusive;
 
-use chrono::{DateTime, Utc};
 use md5::Digest;
 
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
+use time::OffsetDateTime;
 
 use crate::{jfs::RevisionState, path::PathOnDevice};
 
@@ -27,14 +27,14 @@ pub struct AllocReq<'a> {
     pub conflict_handler: ConflictHandler,
 
     /// Creation date of the file.
-    #[serde_as(as = "Option<serde_with::TimestampMilliSeconds<i64>>")]
+    #[serde_as(as = "Option<crate::serde::UnixMillis>")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub created: Option<DateTime<Utc>>,
+    pub created: Option<OffsetDateTime>,
 
     /// Modification date of the file to be uploaded.
-    #[serde_as(as = "Option<serde_with::TimestampMilliSeconds<i64>>")]
+    #[serde_as(as = "Option<crate::serde::UnixMillis>")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub modified: Option<DateTime<Utc>>,
+    pub modified: Option<OffsetDateTime>,
 }
 
 /// Handle conflicts when allocating/uploading a file.
@@ -92,8 +92,8 @@ pub struct CompleteUploadRes {
     pub path: PathOnDevice,
 
     /// Modification date.
-    #[serde_as(as = "serde_with::TimestampMilliSeconds<i64>")]
-    pub modified: DateTime<Utc>,
+    #[serde_as(as = "crate::serde::UnixMillis")]
+    pub modified: OffsetDateTime,
 }
 
 /// Pretty-print of the Jottacloud exception returned when performing a

@@ -3,11 +3,10 @@ use std::{fmt::Debug, sync::Arc};
 
 use async_rwlock::RwLock;
 use async_trait::async_trait;
-use chrono::{DateTime, Duration, Utc};
 
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use serde_with::serde_as;
+use time::{Duration, OffsetDateTime};
 use tracing::{instrument, trace};
 use uuid::Uuid;
 
@@ -64,7 +63,7 @@ impl TokenResponse {
     fn to_access_token(&self) -> AccessToken {
         AccessToken::new(
             self.access_token.clone(),
-            Utc::now() + Duration::seconds(self.expires_in),
+            OffsetDateTime::now_utc() + Duration::seconds(self.expires_in),
         )
     }
 }
@@ -153,7 +152,7 @@ impl TokenStore for LegacyTokenStore {
             let lock = self.access_token.read().await;
 
             if let Some(ref access_token) = *lock {
-                if access_token.exp() >= Utc::now() + Duration::minutes(5) {
+                if access_token.exp() >= OffsetDateTime::now_utc() + Duration::minutes(5) {
                     trace!("found fresh cached access token");
                     return Ok(access_token.clone());
                 }
@@ -248,34 +247,23 @@ impl Conf {
     }
 }
 
-/// JWT claims for the [`AccessToken`].
-#[serde_as]
-#[derive(Debug, Deserialize)]
-pub struct AccessTokenClaims {
-    /// Username associated with this access token.
-    pub username: String,
-    #[serde_as(as = "serde_with::TimestampSeconds<i64>")]
-    /// Expiration date of the token.
-    pub exp: DateTime<Utc>,
-}
-
 /// An access token used to authenticate with all Jottacloud services.
 #[derive(Debug, Clone)]
 pub struct AccessToken {
     value: String,
-    exp: DateTime<Utc>,
+    exp: OffsetDateTime,
 }
 
 impl AccessToken {
     /// Construct a new access token.
     #[must_use]
-    pub fn new(value: String, exp: DateTime<Utc>) -> Self {
+    pub fn new(value: String, exp: OffsetDateTime) -> Self {
         Self { value, exp }
     }
 
     /// Expiration time.
     #[must_use]
-    pub fn exp(&self) -> DateTime<Utc> {
+    pub fn exp(&self) -> OffsetDateTime {
         self.exp
     }
 }
