@@ -142,33 +142,29 @@ impl LegacyTokenStore {
 
 #[async_trait]
 impl TokenStore for LegacyTokenStore {
-    async fn get_refresh_token(&self, _client: &Client) -> crate::Result<String> {
-        Ok(self.refresh_token.clone())
-    }
-
     #[instrument(level = "trace", skip_all)]
     async fn get_access_token(&self, client: &Client) -> crate::Result<AccessToken> {
-        {
-            let lock = self.access_token.read().await;
+        let reader = self.access_token.read().await;
 
-            if let Some(ref access_token) = *lock {
-                if access_token.exp() >= OffsetDateTime::now_utc() + Duration::minutes(5) {
-                    trace!("found fresh cached access token");
-                    return Ok(access_token.clone());
-                }
+        if let Some(ref access_token) = *reader {
+            if access_token.exp() >= OffsetDateTime::now_utc() + Duration::minutes(5) {
+                trace!("found fresh cached access token");
+                return Ok(access_token.clone());
             }
         }
 
+        drop(reader);
+
         trace!("renewing access token");
 
-        let mut lock = self.access_token.write().await;
+        let mut writer = self.access_token.write().await;
 
         let res = Self::manage_token(
             client,
             &TokenRequest {
                 grant_type: GrantType::RefreshToken,
                 password: None,
-                refresh_token: Some(&self.get_refresh_token(client).await?),
+                refresh_token: Some(&self.refresh_token),
                 username: None,
                 client_id: &self.client_id,
                 client_secret: &self.client_secret,
@@ -178,7 +174,7 @@ impl TokenStore for LegacyTokenStore {
 
         let access_token = res.to_access_token();
 
-        *lock = Some(access_token.clone());
+        *writer = Some(access_token.clone());
 
         Ok(access_token)
     }
@@ -191,9 +187,6 @@ impl TokenStore for LegacyTokenStore {
 /// A [`TokenStore`] manages authentication tokens.
 #[async_trait]
 pub trait TokenStore: Debug + Send + Sync {
-    /// Get the cached refresh token or renew it.
-    async fn get_refresh_token(&self, client: &Client) -> crate::Result<String>;
-
     /// Get the cached access token or renew it if it needs to be renewed.
     async fn get_access_token(&self, client: &Client) -> crate::Result<AccessToken>;
 
@@ -203,47 +196,12 @@ pub trait TokenStore: Debug + Send + Sync {
 
 #[async_trait]
 impl TokenStore for Box<dyn TokenStore> {
-    async fn get_refresh_token(&self, client: &Client) -> crate::Result<String> {
-        self.as_ref().get_refresh_token(client).await
-    }
-
     async fn get_access_token(&self, client: &Client) -> crate::Result<AccessToken> {
         self.as_ref().get_access_token(client).await
     }
 
     fn username(&self) -> &str {
         self.as_ref().username()
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-/// Authentication configuration.
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum Conf {
-    /// Legacy auth.
-    Legacy {
-        /// Username. Probably not email.
-        username: String,
-        /// Password.
-        password: String,
-    },
-}
-
-impl Conf {
-    /// Attempt to construct a [`TokenStore`] from this configuration.
-    ///
-    /// # Errors
-    ///
-    /// If the credentials are incorrect, this will return an error. Also,
-    /// this will of course fail if something goes wrong with the network.
-    pub async fn token_store(&self) -> crate::Result<Box<dyn TokenStore>> {
-        let store = match self {
-            Conf::Legacy { username, password } => {
-                Box::new(LegacyTokenStore::try_from_username_password(username, password).await?)
-            }
-        };
-
-        Ok(store)
     }
 }
 

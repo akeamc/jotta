@@ -19,7 +19,7 @@ pub(crate) const DEVICE: &str = "Jotta";
 pub(crate) const MOUNT_POINT: &str = "Archive";
 
 pub use jotta;
-use jotta::{auth::TokenStore, Fs};
+use jotta::{auth::TokenStore, path::UserScopedPath, Fs};
 
 /// Jotta configuration.
 #[derive(Debug, Clone)]
@@ -44,11 +44,21 @@ pub struct Context<S: TokenStore> {
 }
 
 impl<S: TokenStore> Context<S> {
-    /// Initialize a new context. This does not immediately create
-    /// a root directory.
-    #[must_use]
-    pub fn new(fs: Fs<S>, config: Config) -> Self {
-        Self { fs, config }
+    /// Initialize a new context. This creates a root
+    /// directory if it does not already exist.
+    ///
+    /// # Errors
+    ///
+    /// - The usual suspects.
+    /// - Failing to create the root directory.
+    pub async fn initialize(fs: Fs<S>, config: Config) -> crate::Result<Self> {
+        let ctx = Self { fs, config };
+
+        ctx.fs
+            .create_folder(&UserScopedPath(ctx.user_scoped_root()))
+            .await?;
+
+        Ok(ctx)
     }
 
     fn user_scoped_root(&self) -> String {

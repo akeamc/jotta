@@ -25,7 +25,7 @@ use serde_with::serde_as;
 
 use std::io::{Error as IoError, ErrorKind as IoErrorKind};
 
-use crate::{errors::AppError, settings::Settings, AppContext, AppResult};
+use crate::{config::AppConfig, errors::AppError, AppContext, AppResult};
 
 #[serde_as]
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -63,7 +63,7 @@ pub struct PostParameters {
 }
 
 pub async fn post(
-    settings: Data<Settings>,
+    config: Data<AppConfig>,
     ctx: Data<AppContext>,
     path: Path<ObjectPath>,
     params: Query<PostParameters>,
@@ -79,7 +79,7 @@ pub async fn post(
                 cache_control: None,
             };
 
-            let _meta = create(&ctx, &path.bucket, &path.object, meta).await?;
+            create(&ctx, &path.bucket, &path.object, meta).await?;
 
             let reader = payload
                 .map_err(|r| IoError::new(IoErrorKind::Other, r))
@@ -93,7 +93,7 @@ pub async fn post(
                 &path.object,
                 0,
                 reader,
-                settings.connections_per_request,
+                config.connections_per_request,
             )
             .await?;
 
@@ -118,7 +118,7 @@ pub async fn post(
                 Default::default()
             };
 
-            let _meta = create(&ctx, &path.bucket, &path.object, meta).await?;
+            create(&ctx, &path.bucket, &path.object, meta).await?;
 
             let mut res = HttpResponse::Created();
 
@@ -162,7 +162,7 @@ pub struct GetParameters {
 }
 
 pub async fn get(
-    settings: Data<Settings>,
+    config: Data<AppConfig>,
     req: HttpRequest,
     ctx: Data<AppContext>,
     path: Path<ObjectPath>,
@@ -189,7 +189,7 @@ pub async fn get(
                 path.bucket.clone(),
                 path.object.clone(),
                 range,
-                settings.connections_per_request,
+                config.connections_per_request,
             );
 
             if range.len() < meta.size {
@@ -229,7 +229,7 @@ pub async fn patch(
 pub async fn delete(ctx: Data<AppContext>, path: Path<ObjectPath>) -> AppResult<HttpResponse> {
     jotta_osd::object::delete(&ctx, &path.bucket, &path.object).await?;
 
-    Ok(HttpResponse::NoContent().body(""))
+    Ok(HttpResponse::NoContent().finish())
 }
 
 pub fn config(cfg: &mut ServiceConfig) {

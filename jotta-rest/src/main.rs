@@ -1,8 +1,7 @@
-use std::env;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
-use actix_web::{middleware, web::Data, App, HttpServer};
-use config::Config;
-use jotta_rest::{routes, settings::Settings};
+use actix_web::{web::Data, HttpServer};
+use jotta_rest::{config::env_opt, create_app};
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -10,36 +9,16 @@ async fn main() -> std::io::Result<()> {
 
     tracing_subscriber::fmt::init();
 
-    let settings_path = env::var("JOTTA_CONFIG").unwrap_or_else(|_| "Settings".into());
+    let config = jotta_rest::config::AppConfig::default();
+    let ctx = Data::new(config.create_context().await);
 
-    eprintln!(
-        "trying to get settings from {} with optional extension {{toml,json,yaml,ini,ron,...}}",
-        settings_path
-    );
-
-    let settings = Config::builder()
-        .add_source(config::File::with_name(&settings_path).required(false))
-        .add_source(config::Environment::with_prefix("JOTTA"))
-        .build()
-        .unwrap()
-        .try_deserialize::<Settings>()
-        .unwrap();
-
-    let ctx = Data::new(settings.to_ctx().await.unwrap());
-
-    let addr = settings.socket_addr();
+    let port = env_opt("PORT").unwrap_or(8000);
+    let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), port);
 
     eprintln!("binding {}", addr);
 
-    HttpServer::new(move || {
-        App::new()
-            .app_data(Data::new(settings.clone()))
-            .app_data(ctx.clone())
-            .wrap(middleware::NormalizePath::trim())
-            .wrap(middleware::Logger::default())
-            .configure(routes::config)
-    })
-    .bind(addr)?
-    .run()
-    .await
+    HttpServer::new(move || create_app!(config, ctx))
+        .bind(addr)?
+        .run()
+        .await
 }

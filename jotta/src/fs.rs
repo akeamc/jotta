@@ -206,8 +206,11 @@ impl<S: TokenStore> Fs<S> {
     ///
     /// This does NOT return an error if a folder already exists.
     /// Therefore, it's more similar `mkdir -p`. It can, however,
-    /// fail due to underlying Jottacloud errors.
+    /// fail due to your usual Jottacloud errors.
+    #[instrument(skip(self))]
     pub async fn create_folder(&self, path: &UserScopedPath) -> crate::Result<FolderDetail> {
+        debug!("creating folder at {}", path);
+
         let res = self
             .jfs_req(Method::POST, path)
             .await?

@@ -14,7 +14,7 @@ use time::{macros::format_description, OffsetDateTime, PrimitiveDateTime};
 fn parse_typo_datetime(s: &str) -> Result<OffsetDateTime, time::error::Parse> {
     let format = format_description!("[year]-[month]-[day]-T[hour]:[minute]:[second]Z");
 
-    PrimitiveDateTime::parse(s, &format).map(|p| p.assume_utc())
+    PrimitiveDateTime::parse(s, &format).map(PrimitiveDateTime::assume_utc) // as indicated by "Z"
 }
 
 pub(crate) struct OptTypoDateTime;
@@ -98,5 +98,7 @@ mod tests {
             parse_typo_datetime("2020-05-16-T10:46:05Z").unwrap(),
             datetime!(2020-05-16 10:46:05 +00:00:00)
         );
+
+        assert!(parse_typo_datetime("1970-11-04T23:58:11Z").is_err()); // missing dash before T
     }
 }

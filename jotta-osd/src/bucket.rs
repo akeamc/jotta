@@ -54,6 +54,7 @@ pub async fn list(ctx: &Context<impl TokenStore>) -> crate::Result<Vec<Bucket>> 
 /// # Errors
 ///
 /// Your usual Jottacloud errors may happen, though.
+#[instrument(skip(ctx))]
 pub async fn create(ctx: &Context<impl TokenStore>, bucket: &BucketName) -> crate::Result<Bucket> {
     let folder = ctx
         .fs
