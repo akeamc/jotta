@@ -7,14 +7,14 @@ use async_trait::async_trait;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use time::{Duration, OffsetDateTime};
-use tracing::{instrument, trace};
+use tracing::{debug, instrument, trace};
 use uuid::Uuid;
 
 use crate::Error;
 
 /// A thread-safe caching token store for legacy authentication,
 /// i.e. mostly vanilla Jottacloud.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct LegacyTokenStore {
     refresh_token: String,
     access_token: Arc<RwLock<Option<AccessToken>>>,
@@ -69,6 +69,7 @@ impl TokenResponse {
 }
 
 impl LegacyTokenStore {
+    #[instrument(skip_all)]
     async fn register_device(
         client: &Client,
         device_id: impl Serialize,
@@ -102,13 +103,16 @@ impl LegacyTokenStore {
     /// # Errors
     ///
     /// - incorrect username and/or password
+    #[instrument(skip(password))]
     pub async fn try_from_username_password(
-        username: impl Into<String>,
+        username: impl Into<String> + Debug,
         password: &str,
     ) -> crate::Result<Self> {
         let client = Client::new();
 
         let username = username.into();
+
+        debug!("authenticating");
 
         let DeviceRegistration {
             client_id,

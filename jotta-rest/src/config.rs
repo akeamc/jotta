@@ -48,6 +48,12 @@ impl AppConfig {
     }
 }
 
+/// Get an environment variable.
+///
+/// # Panics
+///
+/// If the environment variable isn't set or cannot be properly
+/// parsed, this function panics.
 #[track_caller]
 pub fn env<T>(key: &str) -> T
 where
@@ -57,6 +63,12 @@ where
     env_opt(key).unwrap_or_else(|| panic!("`{key}` was not set"))
 }
 
+/// Get an environment variable, or return `None` if it isn't set.
+///
+/// # Panics
+///
+/// If the environment variable exists but cannot be parsed, this
+/// function panics.
 #[track_caller]
 pub fn env_opt<T>(key: &str) -> Option<T>
 where

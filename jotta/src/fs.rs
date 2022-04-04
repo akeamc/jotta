@@ -209,7 +209,7 @@ impl<S: TokenStore> Fs<S> {
     /// fail due to your usual Jottacloud errors.
     #[instrument(skip(self))]
     pub async fn create_folder(&self, path: &UserScopedPath) -> crate::Result<FolderDetail> {
-        debug!("creating folder at {}", path);
+        debug!("creating folder `{}`", path);
 
         let res = self
             .jfs_req(Method::POST, path)

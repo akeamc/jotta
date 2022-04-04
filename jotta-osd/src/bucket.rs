@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use tracing::{debug, instrument};
 
 /// A bucket contains one or more objects.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Bucket {
     /// Name of the bucket.
     pub name: BucketName,
