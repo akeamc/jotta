@@ -301,7 +301,7 @@ fn aligned_chunked_byte_range(
 pub fn stream_range<'a, S: TokenStore + 'a>(
     ctx: Arc<Context<S>>,
     bucket: BucketName,
-    name: ObjectName,
+    object: ObjectName,
     range: ClosedByteRange,
     num_connections: usize,
 ) -> impl Stream<Item = crate::Result<Bytes>> + 'a {
@@ -309,7 +309,7 @@ pub fn stream_range<'a, S: TokenStore + 'a>(
         .map(move |(chunk_no, range)| {
             let ctx = ctx.clone();
             let bucket = bucket.clone();
-            let name = name.clone();
+            let object = object.clone();
 
             async move {
                 ctx.fs
@@ -317,8 +317,8 @@ pub fn stream_range<'a, S: TokenStore + 'a>(
                         &UserScopedPath(format!(
                             "{}/{}/{}",
                             ctx.user_scoped_root(),
-                            &bucket,
-                            name.clone().chunk_path(chunk_no)
+                            bucket,
+                            object.chunk_path(chunk_no)
                         )),
                         range,
                     )

@@ -1,6 +1,9 @@
+use std::sync::Arc;
+
 use async_once::AsyncOnce;
-use bytes::BytesMut;
-use jotta::{auth::LegacyTokenStore, path::UserScopedPath, Fs};
+use bytes::{BufMut, BytesMut};
+use futures_util::StreamExt;
+use jotta::{auth::LegacyTokenStore, path::UserScopedPath, range::ClosedByteRange, Fs};
 use jotta_osd::{
     bucket::{self, Bucket},
     object::{self, meta::Patch},
@@ -77,5 +80,21 @@ async fn simple_upload() {
 
     assert_eq!(meta.size, filesize as u64);
 
-    todo!("verify the uploaded data");
+    let mut stream = object::stream_range(
+        Arc::new(ctx),
+        bucket.name,
+        name,
+        ClosedByteRange::new_to_including(filesize as u64 - 1),
+        2,
+    );
+
+    let mut remote = BytesMut::with_capacity(filesize);
+
+    while let Some(chunk) = stream.next().await {
+        remote.put(chunk.unwrap());
+    }
+
+    if data != remote {
+        panic!("uploaded file does not match local copy")
+    }
 }
