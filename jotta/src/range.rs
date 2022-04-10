@@ -101,13 +101,13 @@ impl OpenByteRange {
 
 impl From<RangeFrom<u64>> for OpenByteRange {
     fn from(r: RangeFrom<u64>) -> Self {
-        Self { start: r.start }
+        Self::new(r.start)
     }
 }
 
 impl From<RangeFull> for OpenByteRange {
     fn from(_: RangeFull) -> Self {
-        Self { start: 0 }
+        Self::full()
     }
 }
 
@@ -166,7 +166,10 @@ impl ClosedByteRange {
     /// ```
     /// use jotta::range::ClosedByteRange;
     ///
-    /// assert_eq!(ClosedByteRange::new_to_including(10), ClosedByteRange::try_from_bounds(0, 10).unwrap())
+    /// let range = ClosedByteRange::new_to_including(10);
+    ///
+    /// assert_eq!(range.start(), 0);
+    /// assert_eq!(range.end(), 10);
     /// ```
     #[must_use]
     pub fn new_to_including(end: u64) -> Self {

@@ -1,12 +1,14 @@
 use actix_web::{http::StatusCode, ResponseError};
 use http_range::HttpRangeParseError;
 use jotta_osd::jotta;
+use multipart::MultipartError;
+
 #[derive(Debug, thiserror::Error)]
 pub enum AppError {
     #[error("internal server error")]
     InternalError,
-    #[error("bad request")]
-    BadRequest,
+    #[error("bad request: {message}")]
+    BadRequest { message: String },
     #[error("file conflict")]
     Conflict,
     #[error("not found")]
@@ -26,14 +28,16 @@ impl From<jotta_osd::errors::Error> for AppError {
         match e {
             jotta_osd::errors::Error::Fs(e) => match e {
                 jotta::Error::HttpError(_) => Self::InternalError,
-                jotta::Error::UrlError(_) => Self::BadRequest,
+                jotta::Error::UrlError(_) => Self::InternalError,
                 jotta::Error::JottaError(_) => Self::InternalError,
                 jotta::Error::XmlError(_) => Self::InternalError,
                 jotta::Error::AlreadyExists => Self::Conflict,
                 jotta::Error::BadCredentials => Self::InternalError,
                 jotta::Error::NoSuchFileOrFolder => Self::NotFound,
                 jotta::Error::IncompleteUpload => Self::InternalError,
-                jotta::Error::InvalidArgument => Self::BadRequest,
+                jotta::Error::InvalidArgument => Self::BadRequest {
+                    message: e.to_string(),
+                },
                 jotta::Error::CorruptUpload => Self::InternalError,
                 jotta::Error::TokenRenewalFailed => Self::InternalError,
                 jotta::Error::RangeNotSatisfiable => Self::InternalError,
@@ -56,7 +60,7 @@ impl ResponseError for AppError {
     fn status_code(&self) -> StatusCode {
         match self {
             AppError::InternalError => StatusCode::INTERNAL_SERVER_ERROR,
-            AppError::BadRequest => StatusCode::BAD_REQUEST,
+            AppError::BadRequest { .. } => StatusCode::BAD_REQUEST,
             AppError::Conflict => StatusCode::CONFLICT,
             AppError::NotFound => StatusCode::NOT_FOUND,
             AppError::RangeNotSatisfiable => StatusCode::RANGE_NOT_SATISFIABLE,
@@ -73,10 +77,22 @@ impl From<HttpRangeParseError> for AppError {
     }
 }
 
-impl From<mime::FromStrError> for AppError {
-    fn from(e: mime::FromStrError) -> Self {
-        Self::InvalidInput {
+impl From<multipart::InvalidBoundary> for AppError {
+    fn from(e: multipart::InvalidBoundary) -> Self {
+        Self::BadRequest {
             message: e.to_string(),
+        }
+    }
+}
+
+impl<E> From<MultipartError<E>> for AppError {
+    fn from(e: MultipartError<E>) -> Self {
+        match e {
+            MultipartError::Upstream(_) => Self::InternalError,
+            MultipartError::UnexpectedEof | MultipartError::ParseHeaders(_) => Self::BadRequest {
+                message: "parse multipart failed".into(),
+            },
+            MultipartError::Boundary(e) => e.into(),
         }
     }
 }

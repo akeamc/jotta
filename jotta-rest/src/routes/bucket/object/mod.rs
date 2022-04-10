@@ -1,14 +1,13 @@
 use actix_web::{
-    dev,
     http::{
         header::{self, ContentType},
         StatusCode,
     },
-    web::{self, Data, Json, Path, Payload, Query, ServiceConfig},
-    FromRequest, HttpMessage, HttpRequest, HttpResponse, HttpResponseBuilder,
+    web::{self, BytesMut, Data, Json, Path, Payload, Query, ServiceConfig},
+    HttpMessage, HttpRequest, HttpResponse, HttpResponseBuilder,
 };
 
-use futures_util::{io::BufReader, TryStreamExt};
+use futures_util::{io::BufReader, StreamExt, TryStreamExt};
 use http_range::HttpRange;
 use httpdate::fmt_http_date;
 use jotta_osd::jotta::range::ClosedByteRange;
@@ -20,6 +19,7 @@ use jotta_osd::{
     },
     path::{BucketName, ObjectName},
 };
+use multipart::Multipart;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 
@@ -60,12 +60,13 @@ pub enum UploadType {
 #[serde(rename_all = "camelCase")]
 pub struct PostParameters {
     upload_type: UploadType,
+    name: ObjectName,
 }
 
 pub async fn post(
     config: Data<AppConfig>,
     ctx: Data<AppContext>,
-    path: Path<ObjectPath>,
+    bucket: Path<BucketName>,
     params: Query<PostParameters>,
     payload: Payload,
     req: HttpRequest,
@@ -79,7 +80,7 @@ pub async fn post(
                 cache_control: None,
             };
 
-            create(&ctx, &path.bucket, &path.object, meta).await?;
+            create(&ctx, &bucket, &params.name, meta).await?;
 
             let reader = payload
                 .map_err(|r| IoError::new(IoErrorKind::Other, r))
@@ -89,45 +90,118 @@ pub async fn post(
 
             let meta = upload_range(
                 &ctx,
-                &path.bucket,
-                &path.object,
+                &bucket,
+                &params.name,
                 0,
                 reader,
                 config.connections_per_request,
             )
             .await?;
 
-            let mut res = HttpResponse::Ok();
-
-            append_object_headers(&mut res, &meta); // TODO: should we really return a cache-control header here?
-
-            Ok(res.content_type(ContentType::json()).json(meta))
+            Ok(HttpResponse::Created().json(meta))
         }
-        UploadType::Multipart => todo!(),
-        UploadType::Resumable => {
-            let meta = if content_type.is_some() {
-                Json::<Patch>::from_request(
-                    &req,
-                    &mut dev::Payload::Stream {
-                        payload: Box::pin(payload),
-                    },
-                )
-                .await?
-                .into_inner()
-            } else {
-                Default::default()
+        UploadType::Multipart => {
+            let mime = content_type.unwrap_or_default().into_inner();
+
+            if mime.type_() != mime::MULTIPART || mime.subtype() != "related" {
+                panic!("not multipart/related");
+            }
+
+            let mut parts = Multipart::new(req.headers().try_into()?, payload);
+
+            let mut meta = {
+                let mut part = parts.next().await.unwrap()?;
+
+                let content_type = part.content_type().unwrap();
+
+                if content_type.subtype() != mime::JSON && content_type.suffix() != Some(mime::JSON)
+                {
+                    panic!("must be json");
+                };
+
+                let mut buf = BytesMut::new();
+
+                while let Some(chunk) = part.next().await {
+                    let chunk = chunk?;
+                    let buf_len = buf.len() + chunk.len();
+
+                    if buf_len > 8 << 10 {
+                        panic!("too big json");
+                    }
+
+                    buf.extend_from_slice(&chunk);
+                }
+
+                serde_json::from_slice::<Patch>(&buf).unwrap()
             };
 
-            create(&ctx, &path.bucket, &path.object, meta).await?;
+            let body = parts.next().await.unwrap()?;
 
-            let mut res = HttpResponse::Created();
+            let ct: jotta_osd::object::meta::ContentType = body.content_type().unwrap().into();
 
-            res.append_header((
-                header::LOCATION,
-                "https://www.youtube.com/watch?v=dQw4w9WgXcQ", // should be an actual upload url
-            ));
+            if let Some(ref meta_ct) = meta.content_type {
+                if *meta_ct != ct {
+                    panic!("content type mismatch");
+                }
+            } else {
+                meta.content_type = Some(ct)
+            }
 
-            Ok(res.body("TODO"))
+            create(&ctx, &bucket, &params.name, meta).await?;
+
+            let reader = body
+                .map_err(|r| IoError::new(IoErrorKind::Other, r))
+                .into_async_read();
+
+            let reader = BufReader::new(reader);
+
+            let meta = upload_range(
+                &ctx,
+                &bucket,
+                &params.name,
+                0,
+                reader,
+                config.connections_per_request,
+            )
+            .await?;
+
+            Ok(HttpResponse::Created().json(meta))
+        }
+        UploadType::Resumable => {
+            // let meta = if content_type.is_some() {
+            //     Json::<Patch>::from_request(
+            //         &req,
+            //         &mut dev::Payload::Stream {
+            //             payload: Box::pin(payload),
+            //         },
+            //     )
+            //     .await?
+            //     .into_inner()
+            // } else {
+            //     Patch::default()
+            // };
+
+            // create(&ctx, &bucket, &params.name, meta).await?;
+
+            // let mut res = HttpResponse::Created();
+
+            // let claims = ResumableSessionClaims {
+            //     bucket: bucket.clone(),
+            //     object: params.name.clone(),
+            //     iat: OffsetDateTime::now_utc(),
+            // };
+
+            // let token =
+            //     encode_session_token(&claims, config.upload_session_secret.as_bytes()).unwrap();
+
+            // res.append_header((
+            //     header::LOCATION,
+            //     "https://www.youtube.com/watch?v=dQw4w9WgXcQ", // should be an actual upload url
+            // ));
+
+            // Ok(res.body(token))
+
+            Ok(HttpResponse::NotImplemented().finish())
         }
     }
 }
@@ -214,7 +288,9 @@ pub async fn patch(
     let patch = patch.into_inner();
 
     if patch.is_empty() {
-        return Err(AppError::BadRequest);
+        return Err(AppError::BadRequest {
+            message: "patch must not be empty".into(),
+        });
     }
 
     let new = jotta_osd::object::meta::patch(&ctx, &path.bucket, &path.object, patch).await?;
@@ -233,13 +309,16 @@ pub async fn delete(ctx: Data<AppContext>, path: Path<ObjectPath>) -> AppResult<
 }
 
 pub fn config(cfg: &mut ServiceConfig) {
-    cfg.service(web::resource("").route(web::get().to(list)))
-        .service(
-            web::resource("/{object}")
-                .route(web::post().to(post))
-                .route(web::head().to(head))
-                .route(web::get().to(get))
-                .route(web::patch().to(patch))
-                .route(web::delete().to(delete)),
-        );
+    cfg.service(
+        web::resource("")
+            .route(web::get().to(list))
+            .route(web::post().to(post)),
+    )
+    .service(
+        web::resource("/{object}")
+            .route(web::head().to(head))
+            .route(web::get().to(get))
+            .route(web::patch().to(patch))
+            .route(web::delete().to(delete)),
+    );
 }
