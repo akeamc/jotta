@@ -107,7 +107,7 @@ pub async fn post(
                 panic!("not multipart/related");
             }
 
-            let mut parts = Multipart::new(req.headers().try_into()?, payload);
+            let mut parts = Multipart::from_body(payload, req.headers().try_into()?);
 
             let mut meta = {
                 let mut part = parts.next().await.unwrap()?;

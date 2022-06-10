@@ -1,7 +1,6 @@
 use actix_web::{http::StatusCode, ResponseError};
 use http_range::HttpRangeParseError;
 use jotta_osd::jotta;
-use multipart::MultipartError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum AppError {
@@ -85,14 +84,16 @@ impl From<multipart::InvalidBoundary> for AppError {
     }
 }
 
-impl<E> From<MultipartError<E>> for AppError {
-    fn from(e: MultipartError<E>) -> Self {
+impl<E> From<multipart::Error<E>> for AppError {
+    fn from(e: multipart::Error<E>) -> Self {
         match e {
-            MultipartError::Upstream(_) => Self::InternalError,
-            MultipartError::UnexpectedEof | MultipartError::ParseHeaders(_) => Self::BadRequest {
-                message: "parse multipart failed".into(),
-            },
-            MultipartError::Boundary(e) => e.into(),
+            multipart::Error::Stream(_) => Self::InternalError,
+            multipart::Error::UnexpectedEof | multipart::Error::ParseHeaders(_) => {
+                Self::BadRequest {
+                    message: "parse multipart failed".into(),
+                }
+            }
+            multipart::Error::Boundary(e) => e.into(),
         }
     }
 }

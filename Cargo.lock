@@ -1120,12 +1120,12 @@ dependencies = [
 
 [[package]]
 name = "multipart"
-version = "0.1.0"
-source = "git+https://github.com/akeamc/multipart#bf6804919ee735e3abce272d292f1b8d4fed0117"
+version = "0.1.1"
+source = "git+https://github.com/akeamc/multipart#25278de91a6273918e0a15e3626a600f879daeb1"
 dependencies = [
  "actix-http",
  "bytes",
- "futures-core",
+ "futures",
  "http",
  "httparse",
  "memchr",

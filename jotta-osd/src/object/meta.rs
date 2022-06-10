@@ -29,6 +29,7 @@ impl Default for CacheControl {
 
 impl CacheControl {
     /// Get the `String`.
+    #[must_use]
     pub fn into_inner(self) -> String {
         self.0
     }
@@ -53,6 +54,7 @@ impl From<Mime> for ContentType {
 
 impl ContentType {
     /// Get the underlying `Mime`.
+    #[must_use]
     pub fn into_inner(self) -> Mime {
         self.0
     }
