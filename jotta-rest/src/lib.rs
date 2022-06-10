@@ -1,4 +1,4 @@
-use jotta_osd::{jotta::auth::TokenStore, Context};
+use jotta_osd::{jotta::auth::Provider, Context};
 
 pub mod config;
 pub mod errors;
@@ -6,7 +6,7 @@ pub mod routes;
 
 pub type AppResult<T> = Result<T, errors::AppError>;
 
-pub type AppContext = Context<Box<dyn TokenStore>>;
+pub type AppContext = Context<Box<dyn Provider>>;
 
 #[macro_export]
 macro_rules! create_app {

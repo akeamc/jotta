@@ -1,25 +1,21 @@
-use std::sync::Arc;
-
-use async_rwlock::RwLock;
 use async_trait::async_trait;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 use time::{Duration, OffsetDateTime};
-use tracing::{debug, instrument, trace};
+use tracing::{debug, instrument};
 use uuid::Uuid;
 
 use crate::Error;
 
-use super::{AccessToken, TokenStore};
+use super::{AccessToken, Provider};
 
 /// A thread-safe caching token store for legacy authentication,
 /// i.e. mostly vanilla Jottacloud.
 #[derive(Debug, Clone)]
 #[allow(clippy::module_name_repetitions)]
-pub struct LegacyTokenStore {
+pub struct LegacyAuth {
     refresh_token: String,
-    access_token: Arc<RwLock<Option<AccessToken>>>,
     client_id: String,
     client_secret: String,
     username: String,
@@ -70,7 +66,7 @@ impl TokenResponse {
     }
 }
 
-impl LegacyTokenStore {
+impl LegacyAuth {
     #[instrument(skip_all)]
     async fn register_device(
         client: &Client,
@@ -134,11 +130,11 @@ impl LegacyTokenStore {
         )
         .await?;
 
-        let access_token = resp.to_access_token();
+        let _access_token = resp.to_access_token();
 
         Ok(Self {
             refresh_token: resp.refresh_token,
-            access_token: Arc::new(RwLock::new(Some(access_token))),
+            // access_token: Arc::new(RwLock::new(Some(access_token))),
             client_id,
             client_secret,
             username,
@@ -147,24 +143,9 @@ impl LegacyTokenStore {
 }
 
 #[async_trait]
-impl TokenStore for LegacyTokenStore {
+impl Provider for LegacyAuth {
     #[instrument(level = "trace", skip_all)]
-    async fn get_access_token(&self, client: &Client) -> crate::Result<AccessToken> {
-        let reader = self.access_token.read().await;
-
-        if let Some(ref access_token) = *reader {
-            if access_token.exp() >= OffsetDateTime::now_utc() + Duration::minutes(5) {
-                trace!("found fresh cached access token");
-                return Ok(access_token.clone());
-            }
-        }
-
-        drop(reader);
-
-        trace!("renewing access token");
-
-        let mut writer = self.access_token.write().await;
-
+    async fn renew_access_token(&self, client: &Client) -> crate::Result<AccessToken> {
         let res = Self::manage_token(
             client,
             &TokenRequest {
@@ -178,11 +159,7 @@ impl TokenStore for LegacyTokenStore {
         )
         .await?;
 
-        let access_token = res.to_access_token();
-
-        *writer = Some(access_token.clone());
-
-        Ok(access_token)
+        Ok(res.to_access_token())
     }
 
     fn username(&self) -> &str {
