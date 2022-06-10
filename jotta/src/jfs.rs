@@ -418,12 +418,7 @@ impl FileDetail {
     /// `Corrupted`) and if `current_revision` has a state of `Completed`.
     #[must_use]
     pub fn last_upload_complete(&self) -> bool {
-        if self.latest_revision.is_none() {
-            if let Some(current_revision) = &self.current_revision {
-                return current_revision.is_complete();
-            }
-        }
-
-        false
+        self.latest_revision.is_none()
+            && self.current_revision.as_ref().map_or(false, Revision::is_complete)
     }
 }

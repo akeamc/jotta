@@ -8,20 +8,20 @@ use crate::api::{Exception, JsonErrorBody, MaybeUnknown, XmlErrorBody};
 pub enum Error {
     /// HTTP error.
     #[error("{0}")]
-    HttpError(#[from] reqwest::Error),
+    Http(#[from] reqwest::Error),
 
     /// Url error.
     #[error("invalid url")]
-    UrlError(#[from] url::ParseError),
+    Url(#[from] url::ParseError),
 
     /// Upstream (unrecongnized) Jottacloud error. Might be due to
     /// a user error.
     #[error("jotta error")]
-    JottaError(ApiResError),
+    Jotta(ApiResError),
 
     /// XML deserialization error.
     #[error("xml error: {0}")]
-    XmlError(#[from] serde_xml_rs::Error),
+    Xml(#[from] serde_xml_rs::Error),
 
     /// File conflict.
     #[error("file or folder already exists")]
@@ -73,7 +73,7 @@ impl From<JsonErrorBody> for Error {
     fn from(err: JsonErrorBody) -> Self {
         match err.error_id {
             Some(MaybeUnknown::Known(exception)) => Error::from(exception),
-            _ => Self::JottaError(ApiResError::Json(err)),
+            _ => Self::Jotta(ApiResError::Json(err)),
         }
     }
 }
@@ -83,7 +83,7 @@ impl From<XmlErrorBody> for Error {
         if let Some(exception) = err.exception_opt() {
             Error::from(exception)
         } else {
-            Self::JottaError(ApiResError::Xml(err))
+            Self::Jotta(ApiResError::Xml(err))
         }
     }
 }

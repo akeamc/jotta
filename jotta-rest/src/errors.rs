@@ -25,10 +25,10 @@ impl From<jotta_osd::errors::Error> for AppError {
     fn from(e: jotta_osd::errors::Error) -> Self {
         match e {
             jotta_osd::errors::Error::Fs(e) => match e {
-                jotta::Error::HttpError(_) => Self::InternalError,
-                jotta::Error::UrlError(_) => Self::BadRequest,
-                jotta::Error::JottaError(_) => Self::InternalError,
-                jotta::Error::XmlError(_) => Self::InternalError,
+                jotta::Error::Http(_) => Self::InternalError,
+                jotta::Error::Url(_) => Self::BadRequest,
+                jotta::Error::Jotta(_) => Self::InternalError,
+                jotta::Error::Xml(_) => Self::InternalError,
                 jotta::Error::AlreadyExists => Self::Conflict,
                 jotta::Error::BadCredentials => Self::InternalError,
                 jotta::Error::NoSuchFileOrFolder => Self::NotFound,
