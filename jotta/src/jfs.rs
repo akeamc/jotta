@@ -419,6 +419,9 @@ impl FileDetail {
     #[must_use]
     pub fn last_upload_complete(&self) -> bool {
         self.latest_revision.is_none()
-            && self.current_revision.as_ref().map_or(false, Revision::is_complete)
+            && self
+                .current_revision
+                .as_ref()
+                .map_or(false, Revision::is_complete)
     }
 }
