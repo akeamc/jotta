@@ -1,4 +1,4 @@
-use jotta_osd::jotta::auth::{LegacyAuth, Provider, Tele2, TokenStore};
+use jotta_osd::jotta::auth::{LegacyAuth, OAuth2, TokenStore, TELE2_TOKEN_URL};
 
 use super::env;
 
@@ -16,14 +16,14 @@ pub enum Auth {
 }
 
 impl Auth {
-    pub async fn build_token_store(&self) -> TokenStore<Box<dyn Provider>> {
+    pub async fn build_token_store(&self) -> Box<dyn TokenStore> {
         match self {
-            Auth::Legacy { username, password } => TokenStore::new(Box::new(
-                LegacyAuth::try_from_username_password(username, password)
-                    .await
-                    .unwrap(),
-            )),
-            Auth::Tele2 { refresh_token } => TokenStore::new(Box::new(Tele2::new(refresh_token))),
+            Auth::Legacy { username, password } => {
+                Box::new(LegacyAuth::init(username, password).await.unwrap())
+            }
+            Auth::Tele2 { refresh_token } => {
+                Box::new(OAuth2::init(TELE2_TOKEN_URL, refresh_token).unwrap())
+            }
         }
     }
 }

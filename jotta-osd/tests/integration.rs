@@ -3,12 +3,7 @@ use std::sync::Arc;
 use async_once::AsyncOnce;
 use bytes::{BufMut, BytesMut};
 use futures_util::StreamExt;
-use jotta::{
-    auth::{LegacyAuth, TokenStore},
-    path::UserScopedPath,
-    range::ClosedByteRange,
-    Fs,
-};
+use jotta::{auth::LegacyAuth, path::UserScopedPath, range::ClosedByteRange, Fs};
 use jotta_osd::{
     bucket::{self, Bucket},
     object::{self, meta::Patch},
@@ -20,12 +15,12 @@ use rand::{rngs::OsRng, RngCore};
 lazy_static! {
     /// Use a lazily evaluated, thread-safe token store so we don't need
     /// to login for every test.
-    static ref TOKEN_STORE: AsyncOnce<TokenStore<LegacyAuth>> = AsyncOnce::new(async {
+    static ref TOKEN_STORE: AsyncOnce<LegacyAuth> = AsyncOnce::new(async {
                 println!("logging in ...");
 
-                TokenStore::new(LegacyAuth::try_from_username_password(env("USERNAME"), &env("PASSWORD"))
+                LegacyAuth::init(env("USERNAME"), &env("PASSWORD"))
                         .await
-                        .unwrap())
+                        .unwrap()
     });
 }
 

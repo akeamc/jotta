@@ -8,13 +8,14 @@ use uuid::Uuid;
 
 use crate::Error;
 
-use super::{AccessToken, Provider};
+use super::{AccessToken, AccessTokenCache, TokenStore};
 
 /// A thread-safe caching token store for legacy authentication,
 /// i.e. mostly vanilla Jottacloud.
 #[derive(Debug, Clone)]
 #[allow(clippy::module_name_repetitions)]
 pub struct LegacyAuth {
+    access_token: AccessTokenCache,
     refresh_token: String,
     client_id: String,
     client_secret: String,
@@ -102,10 +103,7 @@ impl LegacyAuth {
     ///
     /// - incorrect username and/or password
     #[instrument(skip(password))]
-    pub async fn try_from_username_password(
-        username: impl Into<String> + Debug,
-        password: &str,
-    ) -> crate::Result<Self> {
+    pub async fn init(username: impl Into<String> + Debug, password: &str) -> crate::Result<Self> {
         let client = Client::new();
 
         let username = username.into();
@@ -130,11 +128,11 @@ impl LegacyAuth {
         )
         .await?;
 
-        let _access_token = resp.to_access_token();
+        let access_token = resp.to_access_token();
 
         Ok(Self {
             refresh_token: resp.refresh_token,
-            // access_token: Arc::new(RwLock::new(Some(access_token))),
+            access_token: AccessTokenCache::new(Some(access_token)),
             client_id,
             client_secret,
             username,
@@ -143,9 +141,14 @@ impl LegacyAuth {
 }
 
 #[async_trait]
-impl Provider for LegacyAuth {
-    #[instrument(level = "trace", skip_all)]
-    async fn renew_access_token(&self, client: &Client) -> crate::Result<AccessToken> {
+impl TokenStore for LegacyAuth {
+    #[instrument(skip_all)]
+    async fn get_access_token(&self, client: &Client) -> crate::Result<AccessToken> {
+        if let Some(access_token) = self.access_token.get_fresh().await {
+            return Ok(access_token);
+        }
+
+        let mut w = self.access_token.write().await;
         let res = Self::manage_token(
             client,
             &TokenRequest {
@@ -159,7 +162,9 @@ impl Provider for LegacyAuth {
         )
         .await?;
 
-        Ok(res.to_access_token())
+        let access_token = res.to_access_token();
+        *w = Some(access_token.clone());
+        Ok(access_token)
     }
 
     fn username(&self) -> &str {

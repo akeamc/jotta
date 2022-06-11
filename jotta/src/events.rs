@@ -17,7 +17,7 @@
 
 use std::str::FromStr;
 
-use crate::{auth::Provider, serde::OptTypoDateTime, USER_AGENT};
+use crate::{auth::TokenStore, serde::OptTypoDateTime, USER_AGENT};
 use futures::{future, Sink, SinkExt, Stream, StreamExt};
 use reqwest::{Method, Url};
 use serde::{Deserialize, Serialize};
@@ -32,7 +32,7 @@ use uuid::Uuid;
 
 use crate::{api::read_xml, path::AbsolutePath, Fs};
 
-async fn create_ws_token<P: Provider>(fs: &Fs<P>) -> crate::Result<String> {
+async fn create_ws_token<S: TokenStore>(fs: &Fs<S>) -> crate::Result<String> {
     #[derive(Debug, Deserialize)]
     #[serde(rename_all = "camelCase")]
     struct TokenResponse {
@@ -290,8 +290,8 @@ pub enum Error {
 ///
 /// Might error due to authentication errors. Also, it is not 100% certain that
 /// we will be able to connect to the websocket.
-pub async fn subscribe<P: Provider>(
-    fs: &Fs<P>,
+pub async fn subscribe<S: TokenStore>(
+    fs: &Fs<S>,
 ) -> crate::Result<impl Stream<Item = Result<ServerMessage, Error>> + Sink<ClientMessage>> {
     let token = create_ws_token(fs).await?;
 

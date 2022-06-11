@@ -15,7 +15,7 @@ use tracing::{debug, instrument};
 
 use crate::{
     api::{read_json, read_xml, Exception, MaybeUnknown, XmlErrorBody},
-    auth::{Provider, TokenStore},
+    auth::TokenStore,
     files::{AllocReq, AllocRes, CompleteUploadRes, IncompleteUploadRes, UploadRes},
     jfs::{FileDetail, FolderDetail},
     path::UserScopedPath,
@@ -32,19 +32,19 @@ pub static USER_AGENT: &str = concat!(
 );
 
 /// A Jottacloud "filesystem".
-pub struct Fs<P> {
+pub struct Fs<S> {
     client: Client,
-    token_store: TokenStore<P>,
+    token_store: S,
 }
 
-impl<P: Provider> Fs<P> {
+impl<S: TokenStore> Fs<S> {
     /// Create a new filesystem.
     ///
     /// # Panics
     ///
     /// Panics if the HTTP client fails to initialize.
     #[must_use]
-    pub fn new(token_store: TokenStore<P>) -> Self {
+    pub fn new(token_store: S) -> Self {
         Self {
             client: Client::builder().user_agent(USER_AGENT).build().unwrap(),
             token_store,
