@@ -12,6 +12,7 @@ pub struct AppConfig {
     auth: Auth,
     pub root: String,
     pub connections_per_request: usize,
+    pub upload_session_secret: String,
 }
 
 impl Default for AppConfig {
@@ -20,6 +21,7 @@ impl Default for AppConfig {
             auth: Auth::default(),
             root: env("ROOT"),
             connections_per_request: env_opt("CONNECTIONS_PER_REQUEST").unwrap_or(10),
+            upload_session_secret: env("UPLOAD_SESSION_SECRET"),
         }
     }
 }
@@ -30,6 +32,7 @@ impl AppConfig {
             auth: Auth::default(),
             root: "jotta-test".into(),
             connections_per_request: 10,
+            upload_session_secret: "supersecret".into(),
         }
     }
 

@@ -18,13 +18,19 @@ actix-web = "4.0.1"
 dotenv = "0.15.0"
 futures-util = "0.3.21"
 http-range = "0.1.5"
+httparse = "1.6.0"
 httpdate = "1.0.2"
 jotta-osd = "0.1.0"
+jsonwebtoken = "8.0.1"
+memchr = "2.4.1"
 mime = "0.3.16"
+multipart = { git = "https://github.com/akeamc/multipart", features = ["actix"] }
 serde = { version = "1.0.136", features = ["derive"] }
+serde_json = "1.0.79"
 serde_with = "1.12.0"
 strum = { version = "0.24.0", features = ["derive"] }
 thiserror = "1.0.30"
+time = { version = "0.3.9", features = ["serde", "serde-human-readable"] }
 toml = "0.5.8"
 tracing-subscriber = "0.3.9"
 

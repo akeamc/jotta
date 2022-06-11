@@ -14,10 +14,12 @@ async fn main() -> std::io::Result<()> {
 
     let port = env_opt("PORT").unwrap_or(8000);
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), port);
+    let hostname = env_opt::<String>("HOSTNAME").unwrap_or_else(|| "localhost".into());
 
     eprintln!("binding {}", addr);
 
     HttpServer::new(move || create_app!(config, ctx))
+        .server_hostname(hostname)
         .bind(addr)?
         .run()
         .await

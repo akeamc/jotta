@@ -36,6 +36,7 @@ pub fn config(cfg: &mut ServiceConfig) {
     cfg.service(web::resource("").route(web::get().to(list)))
         .service(
             web::resource("/{bucket}")
+                .name("bucket")
                 .route(web::get().to(get))
                 .route(web::post().to(post))
                 .route(web::delete().to(delete)),

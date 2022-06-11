@@ -27,6 +27,14 @@ impl Default for CacheControl {
     }
 }
 
+impl CacheControl {
+    /// Get the `String`.
+    #[must_use]
+    pub fn into_inner(self) -> String {
+        self.0
+    }
+}
+
 /// Object content type.
 #[serde_as]
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Display)]
@@ -35,6 +43,20 @@ pub struct ContentType(#[serde_as(as = "DisplayFromStr")] pub Mime);
 impl Default for ContentType {
     fn default() -> Self {
         Self(mime::APPLICATION_OCTET_STREAM)
+    }
+}
+
+impl From<Mime> for ContentType {
+    fn from(m: Mime) -> Self {
+        Self(m)
+    }
+}
+
+impl ContentType {
+    /// Get the underlying `Mime`.
+    #[must_use]
+    pub fn into_inner(self) -> Mime {
+        self.0
     }
 }
 
