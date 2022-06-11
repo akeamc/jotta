@@ -1,0 +1,15 @@
+[package]
+name = "jotta-distributed"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+bytes = "1.1.0"
+jotta = { version = "0.1.8", path = "../jotta" }
+md5 = "0.7.0"
+sled = "0.34.7"
+tracing = "0.1.35"
+
+[features]

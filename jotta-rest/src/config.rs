@@ -3,7 +3,7 @@ use std::{fmt::Debug, str::FromStr};
 mod auth;
 
 use auth::Auth;
-use jotta_osd::jotta::Fs;
+use jotta_osd::jotta::Client;
 
 use crate::AppContext;
 
@@ -42,9 +42,9 @@ impl AppConfig {
     pub async fn create_context(&self) -> AppContext {
         let token_store = self.auth.build_token_store().await;
 
-        let fs = Fs::new(token_store);
+        let client = Client::new(token_store);
 
-        AppContext::initialize(fs, self.osd_config()).await.unwrap()
+        AppContext::initialize(client, self.osd_config()).await.unwrap()
     }
 }
 

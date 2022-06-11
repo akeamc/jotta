@@ -30,9 +30,9 @@ use tokio_tungstenite::{
 use tracing::trace;
 use uuid::Uuid;
 
-use crate::{api::read_xml, path::AbsolutePath, Fs};
+use crate::{api::read_xml, path::AbsolutePath, Client};
 
-async fn create_ws_token<S: TokenStore>(fs: &Fs<S>) -> crate::Result<String> {
+async fn create_ws_token<S: TokenStore>(client: &Client<S>) -> crate::Result<String> {
     #[derive(Debug, Deserialize)]
     #[serde(rename_all = "camelCase")]
     struct TokenResponse {
@@ -40,12 +40,12 @@ async fn create_ws_token<S: TokenStore>(fs: &Fs<S>) -> crate::Result<String> {
         auth_token: String,
     }
 
-    let res = fs
+    let res = client
         .authed_req(
             Method::GET,
             format!(
                 "https://jfs.jottacloud.com/rest/token/{}/createToken",
-                fs.username()
+                client.username()
             ),
         )
         .await?
@@ -291,13 +291,13 @@ pub enum Error {
 /// Might error due to authentication errors. Also, it is not 100% certain that
 /// we will be able to connect to the websocket.
 pub async fn subscribe<S: TokenStore>(
-    fs: &Fs<S>,
+    client: &Client<S>,
 ) -> crate::Result<impl Stream<Item = Result<ServerMessage, Error>> + Sink<ClientMessage>> {
-    let token = create_ws_token(fs).await?;
+    let token = create_ws_token(client).await?;
 
     let (stream, _) = connect_async(Url::parse(&format!(
         "wss://websocket.jottacloud.com/ws/{}/{}",
-        fs.username(),
+        client.username(),
         token
     ))?)
     .await

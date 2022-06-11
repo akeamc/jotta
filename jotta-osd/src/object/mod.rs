@@ -52,7 +52,7 @@ pub async fn list(
     bucket: &BucketName,
 ) -> crate::Result<Vec<ObjectName>> {
     let folders = ctx
-        .fs
+        .client
         .index(&UserScopedPath(format!(
             "{}/{}",
             ctx.user_scoped_root(),
@@ -122,9 +122,9 @@ async fn upload(
         modified: None,
     };
 
-    let upload_url = ctx.fs.allocate(&req).await?.upload_url;
+    let upload_url = ctx.client.allocate(&req).await?.upload_url;
 
-    let res = ctx.fs.upload_range(&upload_url, body, 0..=size).await?;
+    let res = ctx.client.upload_range(&upload_url, body, 0..=size).await?;
 
     assert!(matches!(res, UploadRes::Complete(_)));
 
@@ -149,7 +149,7 @@ async fn get_complete_chunk<R: AsyncBufRead + Unpin>(
 
     if cursor != 0 {
         let b = ctx
-            .fs
+            .client
             .file_to_bytes(
                 chunk_path,
                 ClosedByteRange::new_to_including(cursor as u64 - 1),
@@ -185,7 +185,7 @@ async fn get_complete_chunk<R: AsyncBufRead + Unpin>(
         // accidentally truncate the file.
 
         let tail = match ctx
-            .fs
+            .client
             .file_to_bytes(chunk_path, OpenByteRange::new(cursor as u64))
             .await
         {
@@ -312,7 +312,7 @@ pub fn stream_range<'a, S: TokenStore + 'a>(
             let object = object.clone();
 
             async move {
-                ctx.fs
+                ctx.client
                     .file_to_bytes(
                         &UserScopedPath(format!(
                             "{}/{}/{}",
@@ -337,7 +337,7 @@ pub async fn delete(
     object: &ObjectName,
 ) -> crate::Result<()> {
     let _res = ctx
-        .fs
+        .client
         .remove_folder(&UserScopedPath(format!(
             "{}/{}/{}",
             ctx.user_scoped_root(),

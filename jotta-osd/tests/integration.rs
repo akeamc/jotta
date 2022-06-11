@@ -3,7 +3,7 @@ use std::sync::Arc;
 use async_once::AsyncOnce;
 use bytes::{BufMut, BytesMut};
 use futures_util::StreamExt;
-use jotta::{auth::LegacyAuth, path::UserScopedPath, range::ClosedByteRange, Fs};
+use jotta::{auth::LegacyAuth, path::UserScopedPath, range::ClosedByteRange, Client};
 use jotta_osd::{
     bucket::{self, Bucket},
     object::{self, meta::Patch},
@@ -30,7 +30,7 @@ pub fn env(key: &str) -> String {
 
 async fn test_context(test_id: &str) -> Context<LegacyAuth> {
     let token_store = (*TOKEN_STORE.get().await).clone();
-    let fs = Fs::new(token_store);
+    let fs = Client::new(token_store);
     let root = format!("jotta-osd-test/{test_id}");
 
     let path = UserScopedPath(format!("Jotta/Archive/{root}"));

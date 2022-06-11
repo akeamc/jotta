@@ -32,7 +32,7 @@ impl<F: Into<Folder>> From<F> for Bucket {
 #[instrument(skip(ctx))]
 pub async fn list(ctx: &Context<impl TokenStore>) -> crate::Result<Vec<Bucket>> {
     let index = ctx
-        .fs
+        .client
         .index(&UserScopedPath(ctx.user_scoped_root()))
         .await?;
 
@@ -57,7 +57,7 @@ pub async fn list(ctx: &Context<impl TokenStore>) -> crate::Result<Vec<Bucket>> 
 #[instrument(skip(ctx))]
 pub async fn create(ctx: &Context<impl TokenStore>, bucket: &BucketName) -> crate::Result<Bucket> {
     let folder = ctx
-        .fs
+        .client
         .create_folder(&UserScopedPath(format!(
             "{}/{}",
             ctx.user_scoped_root(),
@@ -72,7 +72,7 @@ pub async fn create(ctx: &Context<impl TokenStore>, bucket: &BucketName) -> crat
 #[instrument(skip(ctx))]
 pub async fn get(ctx: &Context<impl TokenStore>, bucket: &BucketName) -> crate::Result<Bucket> {
     let folder = ctx
-        .fs
+        .client
         .index(&UserScopedPath(format!(
             "{}/{}",
             ctx.user_scoped_root(),
@@ -91,7 +91,7 @@ pub async fn get(ctx: &Context<impl TokenStore>, bucket: &BucketName) -> crate::
 #[instrument(skip(ctx))]
 pub async fn delete(ctx: &Context<impl TokenStore>, bucket: &BucketName) -> crate::Result<()> {
     let _res = ctx
-        .fs
+        .client
         .remove_folder(&UserScopedPath(format!(
             "{}/{}",
             ctx.user_scoped_root(),

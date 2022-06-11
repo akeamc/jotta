@@ -100,9 +100,9 @@ pub(crate) async fn set_raw(
         modified: None,
     };
 
-    let upload_url = ctx.fs.allocate(&req).await?.upload_url;
+    let upload_url = ctx.client.allocate(&req).await?.upload_url;
 
-    match ctx.fs.upload_range(&upload_url, body, 0..=bytes).await? {
+    match ctx.client.upload_range(&upload_url, body, 0..=bytes).await? {
         UploadRes::Complete(_) => Ok(()),
         UploadRes::Incomplete(_) => {
             warn!("metadata did not completely upload");
@@ -201,7 +201,7 @@ pub async fn get(
     name: &ObjectName,
 ) -> crate::Result<Meta> {
     let msg = ctx
-        .fs
+        .client
         .file_to_bytes(
             &UserScopedPath(format!(
                 "{}/{}/{}/meta",

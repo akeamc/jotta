@@ -1,5 +1,3 @@
-//! A higher-level but still pretty low-level Jottacloud client with
-//! basic filesystem capabilities.
 use std::{fmt::Debug, ops::RangeInclusive};
 
 use bytes::Bytes;
@@ -8,8 +6,8 @@ use futures::{Stream, TryStreamExt};
 use once_cell::sync::Lazy;
 
 use reqwest::{
-    header::{self},
-    Body, Client, IntoUrl, Method, RequestBuilder, Response, Url,
+    header,
+    Body, IntoUrl, Method, RequestBuilder, Response, Url,
 };
 use tracing::{debug, instrument};
 
@@ -31,13 +29,13 @@ pub static USER_AGENT: &str = concat!(
     env!("CARGO_PKG_REPOSITORY")
 );
 
-/// A Jottacloud "filesystem".
-pub struct Fs<S> {
-    client: Client,
+/// A Jottacloud client.
+pub struct Client<S> {
+    http_client: reqwest::Client,
     token_store: S,
 }
 
-impl<S: TokenStore> Fs<S> {
+impl<S: TokenStore> Client<S> {
     /// Create a new filesystem.
     ///
     /// # Panics
@@ -46,7 +44,7 @@ impl<S: TokenStore> Fs<S> {
     #[must_use]
     pub fn new(token_store: S) -> Self {
         Self {
-            client: Client::builder().user_agent(USER_AGENT).build().unwrap(),
+            http_client: reqwest::Client::builder().user_agent(USER_AGENT).build().unwrap(),
             token_store,
         }
     }
@@ -62,9 +60,9 @@ impl<S: TokenStore> Fs<S> {
         method: Method,
         url: impl IntoUrl,
     ) -> crate::Result<RequestBuilder> {
-        let access_token = self.token_store.get_access_token(&self.client).await?;
+        let access_token = self.token_store.get_access_token(&self.http_client).await?;
 
-        Ok(self.client.request(method, url).bearer_auth(access_token))
+        Ok(self.http_client.request(method, url).bearer_auth(access_token))
     }
 
     async fn jfs_req(
@@ -298,7 +296,7 @@ impl<S: TokenStore> Fs<S> {
     }
 }
 
-impl<P> Debug for Fs<P> {
+impl<P> Debug for Client<P> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Fs").finish()
     }

@@ -8,10 +8,10 @@
 
 pub mod api;
 pub mod auth;
+mod client;
 mod errors;
 pub mod events;
 pub mod files;
-mod fs;
 pub mod jfs;
 pub mod path;
 pub mod range;
@@ -20,4 +20,4 @@ pub(crate) mod serde;
 pub(crate) type Result<T> = core::result::Result<T, errors::Error>;
 
 pub use errors::Error;
-pub use fs::*;
+pub use client::*;

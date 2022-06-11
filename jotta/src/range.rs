@@ -88,26 +88,26 @@ pub struct OpenByteRange {
 impl OpenByteRange {
     /// Construct a new half-open byte range.
     #[must_use]
-    pub fn new(start: u64) -> Self {
+    pub const fn new(start: u64) -> Self {
         Self { start }
     }
 
     /// Construct a full byte range.
     #[must_use]
-    pub fn full() -> Self {
+    pub const fn full() -> Self {
         Self::new(0)
     }
 }
 
 impl From<RangeFrom<u64>> for OpenByteRange {
     fn from(r: RangeFrom<u64>) -> Self {
-        Self { start: r.start }
+        Self::new(r.start)
     }
 }
 
 impl From<RangeFull> for OpenByteRange {
     fn from(_: RangeFull) -> Self {
-        Self { start: 0 }
+        Self::full()
     }
 }
 
@@ -164,9 +164,11 @@ impl ClosedByteRange {
     /// First byte will be 0.
     ///
     /// ```
-    /// use jotta::range::ClosedByteRange;
+    /// # use jotta::range::ClosedByteRange;
+    /// let range = ClosedByteRange::new_to_including(10);
     ///
-    /// assert_eq!(ClosedByteRange::new_to_including(10), ClosedByteRange::try_from_bounds(0, 10).unwrap())
+    /// assert_eq!(range.start(), 0);
+    /// assert_eq!(range.end(), 10);
     /// ```
     #[must_use]
     pub fn new_to_including(end: u64) -> Self {

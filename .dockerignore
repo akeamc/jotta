@@ -1,8 +1,8 @@
 *
 !/jotta
-!/jotta-fs
+!/jotta-distributed
+!/jotta-osd
 !/jotta-rest
-!/jotta-s3
 !Cargo.toml
 !Cargo.lock
 **/Dockerfile

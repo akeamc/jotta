@@ -1,7 +1,7 @@
 use std::env;
 
 use futures::StreamExt;
-use jotta::{auth::LegacyAuth, events, Fs};
+use jotta::{auth::LegacyAuth, events, Client};
 
 #[tokio::main]
 async fn main() -> Result<(), jotta::Error> {
@@ -10,7 +10,7 @@ async fn main() -> Result<(), jotta::Error> {
     let username = env::var("USERNAME").unwrap();
     let password = env::var("PASSWORD").unwrap();
 
-    let fs = Fs::new(LegacyAuth::init(username, &password).await?);
+    let fs = Client::new(LegacyAuth::init(username, &password).await?);
 
     let mut events = events::subscribe(&fs).await?;
 

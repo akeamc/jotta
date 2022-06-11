@@ -19,7 +19,7 @@ pub(crate) const DEVICE: &str = "Jotta";
 pub(crate) const MOUNT_POINT: &str = "Archive";
 
 pub use jotta;
-use jotta::{auth::TokenStore, path::UserScopedPath, Fs};
+use jotta::{auth::TokenStore, path::UserScopedPath, Client};
 
 /// Jotta configuration.
 #[derive(Debug, Clone)]
@@ -39,7 +39,7 @@ impl Config {
 /// is achieved by internal `Arc`s.
 #[derive(Debug)]
 pub struct Context<S: TokenStore> {
-    fs: Fs<S>,
+    client: Client<S>,
     config: Config,
 }
 
@@ -51,10 +51,10 @@ impl<S: TokenStore> Context<S> {
     ///
     /// - The usual suspects.
     /// - Failing to create the root directory.
-    pub async fn initialize(fs: Fs<S>, config: Config) -> crate::Result<Self> {
-        let ctx = Self { fs, config };
+    pub async fn initialize(client: Client<S>, config: Config) -> crate::Result<Self> {
+        let ctx = Self { client, config };
 
-        ctx.fs
+        ctx.client
             .create_folder(&UserScopedPath(ctx.user_scoped_root()))
             .await?;
 
