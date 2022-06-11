@@ -141,17 +141,15 @@ impl<S: TokenStore> Fs<S> {
             .send()
             .await?;
 
-        let res = match read_json::<CompleteUploadRes>(res).await? {
-            Ok(complete) => UploadRes::Complete(complete),
+        match read_json::<CompleteUploadRes>(res).await? {
+            Ok(complete) => Ok(UploadRes::Complete(complete)),
             Err(err) => match err.error_id {
                 Some(MaybeUnknown::Known(Exception::IncompleteUploadOpenApiException)) => {
-                    UploadRes::Incomplete(IncompleteUploadRes { range })
+                    Ok(UploadRes::Incomplete(IncompleteUploadRes { range }))
                 }
-                _ => return Err(err.into()),
+                _ => Err(err.into()),
             },
-        };
-
-        Ok(res)
+        }
     }
 
     /// List all files and folders at a path. Similar to the UNIX `fs` command.
@@ -220,7 +218,7 @@ impl<S: TokenStore> Fs<S> {
         read_xml(res).await
     }
 
-    #[instrument(skip(self, range))]
+    #[instrument(skip(self))]
     async fn file_bin(
         &self,
         path: &UserScopedPath,
