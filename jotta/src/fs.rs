@@ -32,7 +32,6 @@ pub static USER_AGENT: &str = concat!(
 );
 
 /// A Jottacloud "filesystem".
-#[derive(Debug)]
 pub struct Fs<S> {
     client: Client,
     token_store: S,
@@ -142,17 +141,15 @@ impl<S: TokenStore> Fs<S> {
             .send()
             .await?;
 
-        let res = match read_json::<CompleteUploadRes>(res).await? {
-            Ok(complete) => UploadRes::Complete(complete),
+        match read_json::<CompleteUploadRes>(res).await? {
+            Ok(complete) => Ok(UploadRes::Complete(complete)),
             Err(err) => match err.error_id {
                 Some(MaybeUnknown::Known(Exception::IncompleteUploadOpenApiException)) => {
-                    UploadRes::Incomplete(IncompleteUploadRes { range })
+                    Ok(UploadRes::Incomplete(IncompleteUploadRes { range }))
                 }
-                _ => return Err(err.into()),
+                _ => Err(err.into()),
             },
-        };
-
-        Ok(res)
+        }
     }
 
     /// List all files and folders at a path. Similar to the UNIX `fs` command.
@@ -221,7 +218,7 @@ impl<S: TokenStore> Fs<S> {
         read_xml(res).await
     }
 
-    #[instrument(skip(self, range))]
+    #[instrument(skip(self))]
     async fn file_bin(
         &self,
         path: &UserScopedPath,
@@ -298,5 +295,11 @@ impl<S: TokenStore> Fs<S> {
         let res = self.file_bin(path, range).await?;
 
         Ok(res.bytes().await?)
+    }
+}
+
+impl<P> Debug for Fs<P> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Fs").finish()
     }
 }

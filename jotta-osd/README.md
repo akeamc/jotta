@@ -1,3 +1,3 @@
-# `jotta-object`
+# `jotta-osd`
 
 Jottacloud object storage.
