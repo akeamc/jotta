@@ -1,16 +1,23 @@
 use actix_web::{
-    http::header::{CacheControl, CacheDirective, ContentType},
+    http::header::{CacheControl, CacheDirective},
     web::{self, ServiceConfig},
     HttpResponse,
 };
+use serde::Serialize;
 
 pub mod bucket;
 
 pub async fn health() -> HttpResponse {
+    #[derive(Debug, Serialize)]
+    struct Health {
+        version: &'static str,
+    }
+
     HttpResponse::Ok()
-        .insert_header(CacheControl(vec![CacheDirective::NoStore]))
-        .content_type(ContentType::plaintext())
-        .body("200 OK")
+        .insert_header(CacheControl(vec![CacheDirective::NoCache]))
+        .json(Health {
+            version: env!("CARGO_PKG_VERSION"),
+        })
 }
 
 pub fn config(cfg: &mut ServiceConfig) {

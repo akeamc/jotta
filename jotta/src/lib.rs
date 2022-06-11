@@ -8,7 +8,7 @@
 
 pub mod api;
 pub mod auth;
-pub mod errors;
+mod errors;
 pub mod events;
 pub mod files;
 mod fs;

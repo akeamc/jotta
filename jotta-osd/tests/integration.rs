@@ -3,7 +3,7 @@ use std::sync::Arc;
 use async_once::AsyncOnce;
 use bytes::{BufMut, BytesMut};
 use futures_util::StreamExt;
-use jotta::{auth::LegacyTokenStore, path::UserScopedPath, range::ClosedByteRange, Fs};
+use jotta::{auth::LegacyAuth, path::UserScopedPath, range::ClosedByteRange, Fs};
 use jotta_osd::{
     bucket::{self, Bucket},
     object::{self, meta::Patch},
@@ -15,10 +15,10 @@ use rand::{rngs::OsRng, RngCore};
 lazy_static! {
     /// Use a lazily evaluated, thread-safe token store so we don't need
     /// to login for every test.
-    static ref TOKEN_STORE: AsyncOnce<LegacyTokenStore> = AsyncOnce::new(async {
+    static ref TOKEN_STORE: AsyncOnce<LegacyAuth> = AsyncOnce::new(async {
                 println!("logging in ...");
 
-                LegacyTokenStore::try_from_username_password(env("USERNAME"), &env("PASSWORD"))
+                LegacyAuth::init(env("USERNAME"), &env("PASSWORD"))
                         .await
                         .unwrap()
     });
@@ -28,7 +28,7 @@ pub fn env(key: &str) -> String {
     dotenv::var(key).unwrap_or_else(|_| panic!("`{key}` is not defined"))
 }
 
-async fn test_context(test_id: &str) -> Context<LegacyTokenStore> {
+async fn test_context(test_id: &str) -> Context<LegacyAuth> {
     let token_store = (*TOKEN_STORE.get().await).clone();
     let fs = Fs::new(token_store);
     let root = format!("jotta-osd-test/{test_id}");

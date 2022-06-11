@@ -32,7 +32,6 @@ pub static USER_AGENT: &str = concat!(
 );
 
 /// A Jottacloud "filesystem".
-#[derive(Debug)]
 pub struct Fs<S> {
     client: Client,
     token_store: S,
@@ -298,5 +297,11 @@ impl<S: TokenStore> Fs<S> {
         let res = self.file_bin(path, range).await?;
 
         Ok(res.bytes().await?)
+    }
+}
+
+impl<P> Debug for Fs<P> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Fs").finish()
     }
 }
