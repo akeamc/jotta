@@ -1,6 +1,5 @@
 //! XML and Serde don't work well together. Pain.
 use md5::Digest;
-use num::{Integer, Signed};
 use reqwest::{header, Client};
 use serde::Deserialize;
 use time::OffsetDateTime;
@@ -47,31 +46,51 @@ pub struct Devices {
     pub devices: Vec<Device>,
 }
 
+#[doc(hidden)]
+pub trait Signed: Sized {
+    type Unsigned: TryFrom<Self> + Copy;
+}
+
+macro_rules! signed_impl {
+    ($unsigned:ident -> $signed:ident) => {
+        impl Signed for $unsigned {
+            type Unsigned = $signed;
+        }
+    };
+}
+
+signed_impl!(i8 -> u8);
+signed_impl!(i16 -> u16);
+signed_impl!(i32 -> u32);
+signed_impl!(i64 -> u64);
+signed_impl!(i128 -> u128);
+
 /// For storage quotas, Jottacloud returns `-1` to signify
 /// infinity. This struct is fool proof.
 #[derive(Debug, Clone, Copy)]
-pub enum MaybeUnlimited<T: Integer + Signed> {
+pub enum MaybeUnlimited<T: Signed> {
     /// Unlimited. Jottacloud calls this `-1`.
     Unlimited,
     /// Limited.
-    Limited(T),
+    Limited(T::Unsigned),
 }
 
-impl<'de, T: Deserialize<'de> + Integer + Signed> Deserialize<'de> for MaybeUnlimited<T> {
+impl<'de, T: Deserialize<'de> + Signed> Deserialize<'de> for MaybeUnlimited<T> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
         let raw = T::deserialize(deserializer)?;
-        if raw < T::zero() {
-            Ok(Self::Unlimited)
-        } else {
-            Ok(Self::Limited(raw))
+
+        // negative T's won't be successfully converted into T::Unsigned
+        match T::Unsigned::try_from(raw) {
+            Ok(unsigned) => Ok(Self::Limited(unsigned)),
+            Err(_) => Ok(Self::Unlimited),
         }
     }
 }
 
-impl<T: Integer + Signed + Copy> MaybeUnlimited<T> {
+impl<T: Signed> MaybeUnlimited<T> {
     /// Is it unlimited?
     pub fn is_unlimited(&self) -> bool {
         matches!(self, Self::Unlimited)
@@ -83,7 +102,7 @@ impl<T: Integer + Signed + Copy> MaybeUnlimited<T> {
     }
 
     /// Optional limit.
-    pub fn limit(&self) -> Option<T> {
+    pub fn limit(&self) -> Option<T::Unsigned> {
         match self {
             MaybeUnlimited::Unlimited => None,
             MaybeUnlimited::Limited(limit) => Some(*limit),
@@ -136,28 +155,16 @@ pub struct AccountInfo {
     pub devices: Devices,
 }
 
-/// Get information about the current account.
-///
-/// # Errors
-///
-/// - network error
-/// - jottacloud error
-pub async fn get_account(
-    client: &Client,
-    username: &str,
-    token: &AccessToken,
-) -> crate::Result<AccountInfo> {
-    let res = client
-        .get(format!("https://jfs.jottacloud.com/jfs/{}", username))
-        .header(header::AUTHORIZATION, format!("Bearer {}", token))
-        .send()
-        .await?;
-
-    let xml = res.text().await?;
-
-    let info = serde_xml_rs::from_str(&xml)?;
-
-    Ok(info)
+impl AccountInfo {
+    /// Available storage in bytes.
+    #[must_use]
+    pub fn free(&self) -> MaybeUnlimited<i64> {
+        self.capacity
+            .limit()
+            .map_or(MaybeUnlimited::Unlimited, |c| {
+                MaybeUnlimited::Limited(c - self.usage)
+            })
+    }
 }
 
 /// A Jottacloud mount point is like a root directory for uploading and syncing files.

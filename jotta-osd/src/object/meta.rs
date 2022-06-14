@@ -102,7 +102,11 @@ pub(crate) async fn set_raw(
 
     let upload_url = ctx.client.allocate(&req).await?.upload_url;
 
-    match ctx.client.upload_range(&upload_url, body, 0..=bytes).await? {
+    match ctx
+        .client
+        .upload_range(&upload_url, body, 0..=bytes)
+        .await?
+    {
         UploadRes::Complete(_) => Ok(()),
         UploadRes::Incomplete(_) => {
             warn!("metadata did not completely upload");

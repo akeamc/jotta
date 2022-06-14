@@ -44,7 +44,9 @@ impl AppConfig {
 
         let client = Client::new(token_store);
 
-        AppContext::initialize(client, self.osd_config()).await.unwrap()
+        AppContext::initialize(client, self.osd_config())
+            .await
+            .unwrap()
     }
 }
 

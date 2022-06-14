@@ -8,16 +8,45 @@ use serde::{Deserialize, Serialize};
 /// on what device.
 ///
 /// `<mount point>/...`
-#[derive(Debug, Serialize, Deserialize, Display)]
+///
+/// Note that there is no leading slash.
+#[derive(Debug, Serialize, Deserialize, Display, PartialEq, Eq)]
 #[allow(clippy::module_name_repetitions)]
 pub struct PathOnDevice(pub String);
+
+impl PathOnDevice {
+    /// Specify a device.
+    ///
+    /// ```
+    /// # use jotta::path::{PathOnDevice, UserScopedPath};
+    /// let on_device = PathOnDevice("Archive/folder/subfolder/kitten.jpeg".into());
+    /// assert_eq!(
+    ///     on_device.with_device("Jotta").0,
+    ///     "Jotta/Archive/folder/subfolder/kitten.jpeg",
+    /// );
+    /// ```
+    #[must_use]
+    pub fn with_device(&self, device: &str) -> UserScopedPath {
+        UserScopedPath(format!("{device}/{self}"))
+    }
+}
 
 /// A path without the user part:
 ///
 /// `<device>/...`
-#[derive(Debug, Serialize, Deserialize, Display)]
+///
+/// Note that there is no leading slash.
+#[derive(Debug, Serialize, Deserialize, Display, PartialEq, Eq)]
 #[allow(clippy::module_name_repetitions)]
 pub struct UserScopedPath(pub String);
+
+impl UserScopedPath {
+    /// Specify what user it belongs to.
+    #[must_use]
+    pub fn with_user(&self, user: &str) -> AbsolutePath {
+        AbsolutePath(format!("{user}/{self}"))
+    }
+}
 
 impl Deref for UserScopedPath {
     type Target = str;
@@ -30,6 +59,16 @@ impl Deref for UserScopedPath {
 /// An absolute path:
 ///
 /// `<user>/<device>/...`
-#[derive(Debug, Serialize, Deserialize, Display)]
+///
+/// Even though it's absolute, it must not contain a leading slash.
+#[derive(Debug, Serialize, Deserialize, Display, PartialEq, Eq)]
 #[allow(clippy::module_name_repetitions)]
 pub struct AbsolutePath(pub String);
+
+impl Deref for AbsolutePath {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}

@@ -5,14 +5,16 @@ use jotta::{auth::LegacyAuth, events, Client};
 
 #[tokio::main]
 async fn main() -> Result<(), jotta::Error> {
+    dotenv::dotenv().ok();
+
     tracing_subscriber::fmt::init();
 
     let username = env::var("USERNAME").unwrap();
     let password = env::var("PASSWORD").unwrap();
 
-    let fs = Client::new(LegacyAuth::init(username, &password).await?);
+    let client = Client::new(LegacyAuth::init(username, &password).await?);
 
-    let mut events = events::subscribe(&fs).await?;
+    let mut events = events::subscribe(&client).await?;
 
     while let Some(ev) = events.next().await {
         match ev {

@@ -5,17 +5,14 @@ use futures::{Stream, TryStreamExt};
 
 use once_cell::sync::Lazy;
 
-use reqwest::{
-    header,
-    Body, IntoUrl, Method, RequestBuilder, Response, Url,
-};
+use reqwest::{header, Body, IntoUrl, Method, RequestBuilder, Response, Url};
 use tracing::{debug, instrument};
 
 use crate::{
     api::{read_json, read_xml, Exception, MaybeUnknown, XmlErrorBody},
     auth::TokenStore,
     files::{AllocReq, AllocRes, CompleteUploadRes, IncompleteUploadRes, UploadRes},
-    jfs::{FileDetail, FolderDetail},
+    jfs::{AccountInfo, FileDetail, FolderDetail},
     path::UserScopedPath,
     range::{ByteRange, OpenByteRange},
 };
@@ -44,7 +41,10 @@ impl<S: TokenStore> Client<S> {
     #[must_use]
     pub fn new(token_store: S) -> Self {
         Self {
-            http_client: reqwest::Client::builder().user_agent(USER_AGENT).build().unwrap(),
+            http_client: reqwest::Client::builder()
+                .user_agent(USER_AGENT)
+                .build()
+                .unwrap(),
             token_store,
         }
     }
@@ -62,7 +62,10 @@ impl<S: TokenStore> Client<S> {
     ) -> crate::Result<RequestBuilder> {
         let access_token = self.token_store.get_access_token(&self.http_client).await?;
 
-        Ok(self.http_client.request(method, url).bearer_auth(access_token))
+        Ok(self
+            .http_client
+            .request(method, url)
+            .bearer_auth(access_token))
     }
 
     async fn jfs_req(
@@ -73,9 +76,7 @@ impl<S: TokenStore> Client<S> {
         static JFS_BASE: Lazy<Url> =
             Lazy::new(|| Url::parse("https://jfs.jottacloud.com/jfs/").unwrap());
 
-        let url = JFS_BASE
-            .join(&format!("{}/", self.token_store.username()))?
-            .join(path)?;
+        let url = JFS_BASE.join(&path.with_user(self.username()))?;
 
         self.authed_req(method, url).await
     }
@@ -159,6 +160,21 @@ impl<S: TokenStore> Client<S> {
     /// - path doesn't exist
     pub async fn index(&self, path: &UserScopedPath) -> crate::Result<FolderDetail> {
         let res = self.jfs_req(Method::GET, path).await?.send().await?;
+
+        read_xml(res).await
+    }
+
+    /// Account details.
+    ///
+    /// # Errors
+    ///
+    /// Network and auth errors might cause this to fail.
+    pub async fn account_info(&self) -> crate::Result<AccountInfo> {
+        let res = self
+            .jfs_req(Method::GET, &UserScopedPath("".into()))
+            .await?
+            .send()
+            .await?;
 
         read_xml(res).await
     }

@@ -19,5 +19,5 @@ pub(crate) mod serde;
 
 pub(crate) type Result<T> = core::result::Result<T, errors::Error>;
 
-pub use errors::Error;
 pub use client::*;
+pub use errors::Error;
