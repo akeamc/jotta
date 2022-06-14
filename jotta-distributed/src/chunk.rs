@@ -15,6 +15,7 @@ async fn upload_bytes(
     ctx: &Context<impl TokenStore>,
     id: Id,
     body: Bytes, // there is no point accepting a stream since a checksum needs to be calculated prior to allocation anyway
+    reject_conflicts: bool,
 ) -> crate::Result<()> {
     let md5 = md5::compute(&body);
     let size = body.len().try_into().unwrap();
@@ -22,10 +23,14 @@ async fn upload_bytes(
     trace!("uploading {} bytes", size);
 
     let req = AllocReq {
-        path: &PathOnDevice("a".into()),
+        path: &ctx.device_root(),
         bytes: size,
         md5,
-        conflict_handler: ConflictHandler::CreateNewRevision,
+        conflict_handler: if reject_conflicts {
+            ConflictHandler::RejectConflicts
+        } else {
+            ConflictHandler::CreateNewRevision
+        },
         created: None,
         modified: None,
     };
